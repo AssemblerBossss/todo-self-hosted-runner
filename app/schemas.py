@@ -17,6 +17,7 @@ class Tags(str, Enum):
 
 
 class Todo(BaseModel):
+    id: Optional[int] = Field(default=None, alias='id')
     title: str = Field(min_length=3, max_length=200, default="Задача")
     details: str = Field(max_length=500, default="Описание задачи")
     completed: bool = Field(default=False)
@@ -42,6 +43,7 @@ class Todo(BaseModel):
             ]
         }
     }
+
 
 
 class User(BaseModel):

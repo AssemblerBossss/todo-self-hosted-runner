@@ -73,9 +73,17 @@ class TodoRepository:
 
     async def add_todo(self, data: dict):
         data['created_at'] = datetime.utcnow()
-        await self._session.execute(
-            insert(Todo).values(**data)
-        )
+
+        # Создаем объект Todo
+        todo = Todo(**data)
+
+        # Добавляем в сессию
+        self._session.add(todo)
+        await self._session.commit()
+        await self._session.refresh(todo)  # обновляем, чтобы получить ID
+
+        return todo
+
 
     async def add_todo_object(self, todo: Todo):
         self._session.add(todo)

@@ -3,14 +3,19 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from elasticsearch import AsyncElasticsearch
+
 from app.repository import TodoRepository
 from app.repository import AuthRepository
+from app.elastic_repository import ElasticRepository
 
 
 class UnitOfWork:
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker, es_client: AsyncElasticsearch):
         self.session_factory = session_factory
         self._session: AsyncSession | None = None
+        self.es_client: AsyncElasticsearch = es_client
+
 
     @asynccontextmanager
     async def start(self):
@@ -27,6 +32,10 @@ class UnitOfWork:
     @property
     def todo(self) -> TodoRepository:
         return TodoRepository(self._session)
+
+    @property
+    def elastic(self) -> ElasticRepository:
+        return ElasticRepository(self.es_client)
 
     @property
     def auth(self) -> AuthRepository:

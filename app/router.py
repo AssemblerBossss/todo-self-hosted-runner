@@ -131,7 +131,20 @@ async def add_todo(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Image upload failed")
 
     todo = Todo(title=title, details=details, tag=tag, image_path=random_filename, source=source, image_hash=image_hash)
-    await uow_session.todo.add_todo(todo.model_dump())
+
+    created_todo = await uow_session.todo.add_todo(todo.model_dump())
+    logger.error(created_todo)
+
+    if hasattr(created_todo, 'id'):
+        todo.id = created_todo.id
+    elif isinstance(created_todo, dict):
+        todo.id = created_todo.get('id')
+
+    try:
+        await uow_session.elastic.index_todo(todo)
+    except Exception as e:
+        logger.error(f"Failed to index todo in Elasticsearch: {e}")
+
 
     logger.info("Todo added successfully")
 
@@ -224,10 +237,12 @@ async def edit_todo(todo_id: int,
     todo_change.source = todo.source
 
     await uow_session.todo.update_todo(todo_id, todo_change.model_dump())
+    await uow_session.elastic.update_todo(todo_id, todo)
     return {
         "status": "success",
         "details": "Todo edited"
     }
+
 
 
 @todo_router.delete("/delete/{todo_id}/", status_code=status.HTTP_200_OK)
@@ -248,6 +263,7 @@ async def delete_todo(todo_id: int, limit: int = 10, skip: int = 0,
         await delete_image(todo.image_path)
 
     await uow_session.todo.delete_todo(todo_id)
+    await uow_session.elastic.delete_todo(todo_id)
     return {
         "status": "success",
         "details": "Todo deleted",
