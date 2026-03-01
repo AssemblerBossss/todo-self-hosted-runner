@@ -22,6 +22,7 @@ from fastapi import Form
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from fastapi.responses import FileResponse
+from starlette.responses import HTMLResponse
 
 from app.auth import get_current_active_user
 from app.database import get_async_uow_session
@@ -409,3 +410,47 @@ async def export_data(uow_session: UnitOfWork = Depends(get_async_uow_session)):
 
     return FileResponse("data/todos.xlsx", filename=datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".xlsx",
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+
+@todo_router.get("/search/", response_class=HTMLResponse)
+async def search_page(request: Request):
+    """Страница поиска"""
+    return templates.TemplateResponse(
+        "search.html",
+        {"request": request}
+    )
+
+
+@todo_router.post("/search/", response_class=HTMLResponse)
+async def search_todos(
+        request: Request,
+        query: str = Form(...),
+        uow_session: UnitOfWork = Depends(get_async_uow_session)
+    ):
+    try:
+        results = await uow_session.elastic.search_todos(query)
+
+        # Было: hit["_source"]["todo_id"] — неверно, _source уже развёрнут
+        todo_ids = [hit["todo_id"] for hit in results]  # ✅
+
+        if todo_ids:
+            todos = await uow_session.todo.get_todos_by_ids(todo_ids)
+        else:
+            todos = []
+
+        return templates.TemplateResponse(
+            "search_results.html",
+            {
+                "request": request,
+                "todos": todos,
+                "query": query,
+                "count": len(todos)
+            })
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        ...
+
+
+
+

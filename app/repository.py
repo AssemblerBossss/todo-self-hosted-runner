@@ -64,6 +64,13 @@ class TodoRepository:
         data = find_todos.scalars().all()
         return data
 
+
+    async def get_todos_by_ids(self, todo_ids: list):
+
+        query = select(Todo).where(Todo.id.in_(todo_ids))
+        result = await self._session.execute(query)
+        return result.scalars().all()
+
     async def get_all_todos(self):
         find_todos = await self._session.execute(
             select(Todo).order_by(desc(Todo.id))
