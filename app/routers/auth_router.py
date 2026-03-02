@@ -14,8 +14,8 @@ from app.utils import OAuth2PasswordBearerWithCookie
 from fastapi.security import OAuth2PasswordRequestForm
 from app.schemas import User
 from app.models import User as UserDb
-from app.database import get_async_uow_session
-from app.uow import UnitOfWork
+from app.core.database import get_async_uow_session
+from app.core.uow import UnitOfWork
 
 # pylint: disable=invalid-name
 templates = Jinja2Templates(directory="app/templates")

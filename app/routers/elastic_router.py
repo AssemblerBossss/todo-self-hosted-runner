@@ -1,42 +1,24 @@
-import math
-import io
-import squarify
-import os
-from typing import Annotated
 from datetime import datetime
-
-import asyncio
-import shutil
 
 from loguru import logger
 from fastapi import APIRouter
 from fastapi import Request
-from fastapi import File
-from fastapi import UploadFile
 from fastapi import Depends
 from fastapi.templating import Jinja2Templates
+
 templates = Jinja2Templates(directory="app/templates")
 from fastapi import status
-from fastapi import HTTPException
 from fastapi import Form
 
-from fastapi.responses import RedirectResponse
-from fastapi.responses import FileResponse
 from starlette.responses import HTMLResponse
 
-from app.auth import get_current_active_user
-from app.database import get_async_uow_session
-from app.schemas import User
-from app.schemas import TodoSource
-from app.schemas import Todo
-from app.schemas import Tags
+from app.core.database import get_async_uow_session
 
 from app.utils import generate_random_filename
 
 from app.utils import import_todos
 
-from app.uow import UnitOfWork
-
+from app.core.uow import UnitOfWork
 
 elastic_router = APIRouter(prefix="/elastic")
 
@@ -66,14 +48,12 @@ async def search_page(request: Request):
     )
 
 
-
-
 @elastic_router.post("/search/", response_class=HTMLResponse)
 async def search_todos(
         request: Request,
         query: str = Form(...),
         uow_session: UnitOfWork = Depends(get_async_uow_session)
-    ):
+):
     try:
         results = await uow_session.elastic.search_todos(query)
 

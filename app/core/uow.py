@@ -7,7 +7,7 @@ from elasticsearch import AsyncElasticsearch
 
 from app.repository import TodoRepository
 from app.repository import AuthRepository
-from app.elastic_repository import ElasticRepository
+from app.repository.elastic_repository import ElasticRepository
 
 
 class UnitOfWork:

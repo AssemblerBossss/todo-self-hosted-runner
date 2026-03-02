@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.database import get_async_uow_session
+from app.core.database import get_async_uow_session
 from app.models import Base
 from app.main import app
-from app.uow import UnitOfWork
+from app.core.uow import UnitOfWork
 from app.config import get_db_url
 
 engine_test = create_async_engine(get_db_url(), poolclass=NullPool)

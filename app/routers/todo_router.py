@@ -3,7 +3,6 @@ import math
 import io
 import squarify
 import os
-from typing import Annotated
 from datetime import datetime
 
 import asyncio
@@ -22,10 +21,8 @@ from fastapi import Form
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from fastapi.responses import FileResponse
-from starlette.responses import HTMLResponse
 
-from app.auth import get_current_active_user
-from app.database import get_async_uow_session
+from app.core.database import get_async_uow_session
 from app.schemas import User
 from app.schemas import TodoSource
 from app.schemas import Todo
@@ -36,7 +33,7 @@ from app.utils import load_image
 from app.utils import import_todos
 from app.utils import delete_image
 from app.utils import hash_image
-from app.uow import UnitOfWork
+from app.core.uow import UnitOfWork
 
 todo_router = APIRouter(
     prefix="/todo",

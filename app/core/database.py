@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from elasticsearch import AsyncElasticsearch
 
 from app.config import get_db_url
-from app.uow import UnitOfWork
+from app.core.uow import UnitOfWork
 
 
 _es_client: AsyncElasticsearch | None = None
