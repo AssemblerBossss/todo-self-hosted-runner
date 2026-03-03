@@ -7,7 +7,7 @@ from typing import Annotated
 from app.dependencies import get_auth_service
 from app.exceptions import UserAlreadyExists, InactiveUser, InvalidCredentials
 from app.utils import OAuth2PasswordBearerWithCookie
-from app.schemas import User
+from app.schemas import User, SUserRegister
 from app.core import get_async_uow_session, UnitOfWork
 from app.services import AuthService
 
@@ -124,3 +124,12 @@ async def register(
         )
 
     return RedirectResponse(url="/auth/login", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register_user(
+    user_data: SUserRegister,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+):
+    await auth_service.register_user(user_data)
+    return {"message": "Вы успешно зарегистрированы!"}
