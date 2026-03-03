@@ -53,9 +53,9 @@ class TokenRepository:
             await self._session.flush()
 
             logger.info(
-                "Создан refresh token для пользователя {} с ID {}".format(
-                    user_id, token_record.id
-                )
+                "Создан refresh token для пользователя %d с ID %d",
+                user_id,
+                token_record.id,
             )
             return token_record
 
@@ -89,9 +89,7 @@ class TokenRepository:
             logger.error("Ошибка при поиске refresh token: {}".format(e))
             raise
 
-    async def validate_refresh_token(
-        self, refresh_token: str
-    ) -> RefreshToken | None:
+    async def validate_refresh_token(self, refresh_token: str) -> RefreshToken | None:
         """
         Проверить валидность refresh token
 

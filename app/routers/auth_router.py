@@ -41,12 +41,17 @@ async def get_current_active_user(
     return current_user
 
 
+@auth_router.get("/login", status_code=status.HTTP_200_OK)
+async def get_home(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
 @auth_router.post("/token", response_class=HTMLResponse)
 async def login(
     request: Request,
     user_data: SUserAuth,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    auth_service: AuthService = Depends(get_auth_service),
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
 
     user_agent = request.headers.get("User-Agent")
@@ -80,7 +85,7 @@ async def login(
         secure=False,
         samesite="lax",
         max_age=tokens.expires_in,
-        path="/"
+        path="/",
     )
 
     response.set_cookie(
@@ -90,34 +95,9 @@ async def login(
         secure=False,
         samesite="lax",
         max_age=tokens.expires_in,
-        path="/auth/refresh"
+        path="/auth/refresh",
     )
     return response
-
-
-@auth_router.get("/logout")
-async def login(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    auth_service: AuthService = Depends(get_auth_service),
-):
-    await auth_service.logout(username=current_user.name, uow_session=uow_session)
-
-    response = RedirectResponse("/auth/login", status_code=302)
-    response.delete_cookie("access_token")
-    return response
-
-
-@auth_router.get("/login", status_code=status.HTTP_200_OK)
-async def get_home(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-@auth_router.get("/users/me")
-async def read_users_me(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-):
-    return current_user
 
 
 @auth_router.get("/register", response_class=HTMLResponse)
@@ -144,10 +124,21 @@ async def register(
     return RedirectResponse(url="/auth/login", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register_user(
-    user_data: SUserRegister,
+@auth_router.get("/logout")
+async def login(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
-    await auth_service.register_user(user_data)
-    return {"message": "Вы успешно зарегистрированы!"}
+    await auth_service.logout(username=current_user.name, uow_session=uow_session)
+
+    response = RedirectResponse("/auth/login", status_code=302)
+    response.delete_cookie("access_token")
+    return response
+
+
+@auth_router.get("/users/me")
+async def read_users_me(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    return current_user

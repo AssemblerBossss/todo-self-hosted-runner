@@ -76,16 +76,6 @@ class AuthService:
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
 
-    async def register(self, *, username: str, password: str, uow_session: UnitOfWork):
-        async with uow_session.start():
-            existing_user = await uow_session.auth.get_user(username)
-            if existing_user:
-                raise UserAlreadyExists()
-
-            user = User(username=username, password=password, disabled=False)
-
-            await uow_session.auth.add_user(user)
-
     async def register_user(
         self, uow_session: UnitOfWork, user_data: SUserRegister
     ) -> None:
@@ -101,10 +91,11 @@ class AuthService:
                 email=user_data.email,
                 hashed_password=hashed_password,
                 role=user_data.role,
+                first_name=user_data.first_name,
+                last_name=user_data.last_name,
             )
 
             await uow_session.auth.add_user(user)
-
 
     async def logout(
         self,
