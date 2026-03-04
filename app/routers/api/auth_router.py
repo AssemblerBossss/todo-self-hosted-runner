@@ -10,6 +10,7 @@ from app.utils import OAuth2PasswordBearerWithCookie
 from app.schemas import User, SUserRegister, SUserAuth
 from app.core import get_async_uow_session, UnitOfWork
 from app.services import AuthService
+from app.routers.dependencies import get_current_user
 
 # pylint: disable=invalid-name
 templates = Jinja2Templates(directory="app/templates")
@@ -18,27 +19,6 @@ auth_router = APIRouter(prefix="/auth", tags=["Auth"])
 
 oauth2_scheme = OAuth2PasswordBearerWithCookie(tokenUrl="token")
 
-
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-):
-    user = await uow_session.auth.get_user(token)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
-
-
-async def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    if current_user.disabled:
-        raise HTTPException(status_code=401, detail="Inactive user")
-    return current_user
 
 
 @auth_router.get("/login", status_code=status.HTTP_200_OK)
@@ -126,7 +106,7 @@ async def register(
 
 @auth_router.get("/logout")
 async def login(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
@@ -139,6 +119,6 @@ async def login(
 
 @auth_router.get("/users/me")
 async def read_users_me(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     return current_user
