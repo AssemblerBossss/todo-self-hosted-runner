@@ -19,8 +19,6 @@ from app.utils import (
 )
 
 class TodoService:
-    def __init__(self, todo_repository: TodoRepository):
-        self.todo_repository = todo_repository
 
     @staticmethod
     def _parse_data(date_str: str | None) -> datetime | None:
