@@ -1,5 +1,3 @@
-# app/core/exception_handlers.py
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.exceptions import NotFoundException, InvalidPageException
