@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from fastapi import HTTPException, status, UploadFile
 from loguru import logger
 
-from app.exceptions import InvalidPageException, NotFoundException
+from app.exceptions import InvalidPageException, NotFoundException, ForbiddenException
 from app.models import Todo as TodoORM
 from app.schemas import Tags, TodoSource
 from app.repository import TodoRepository
@@ -37,7 +37,7 @@ class TodoService:
         tag: Tags,
         source: TodoSource,
         image: Optional[UploadFile],
-        author_id: int
+        author_id: int,
     ) -> None:
 
         async with uow_session.start():
@@ -110,25 +110,108 @@ class TodoService:
 
         return todos, skip, pages
 
-    async def delete(self, uow_session: UnitOfWork, todo_id: int) -> None:
+    async def delete(self, uow_session: UnitOfWork, todo_id: int, user_id: int) -> None:
+        """Удаление todo с проверкой владельца"""
         async with uow_session.start():
             todo = await uow_session.todo.get_todo_by_id(todo_id=todo_id)
-
             if not todo:
                 raise NotFoundException(f"Todo with id {todo_id} not found")
-            logger.info("Deleting todo: %s", todo)
+            if todo.author_id != user_id:
+                raise ForbiddenException("You can only delete your own todos")
 
+            logger.info("Deleting todo: %s", todo)
             if (
                 await uow_session.todo.get_todos_by_image_path(
-                    image_path=todo.image_path, todo_id=todo_id
+                    image_path=todo.image_path,
+                    todo_id=todo_id,
                 )
                 is None
             ):
                 await delete_image(todo.image_path)
+            await uow_session.todo.delete_todo(todo_id)
+            try:
+                await uow_session.elastic.delete_todo(todo_id)
+            except Exception as e:
+                logger.error("Elastic delete failed: %s", e)
 
-            await uow_session.todo.delete_todo(todo_id=todo_id)
+    async def delete_multiple(
+        self, uow_session: UnitOfWork, todo_ids: list[int], user_id: int
+    ) -> None:
+        """Удаление нескольких todo по списку идентификаторов с проверкой прав владельца"""
+        async with uow_session.start():
+            todos = await uow_session.todo.get_todos_by_ids(todo_ids=todo_ids)
+            if not todos:
+                raise NotFoundException(f"Todos with id {todo_ids} not found")
 
-        try:
-            await uow_session.elastic.delete_todo(todo_id)
-        except Exception as e:
-            logger.error("Elastic delete failed: %s", e)
+            not_owned_ids = [todo.id for todo in todos if todo.author_id != user_id]
+            if not_owned_ids:
+                raise ForbiddenException("You can only delete your own todos")
+
+            image_paths_to_delete = []
+            for todo in todos:
+                if (
+                    todo.image_path
+                    and await uow_session.todo.get_todos_by_image_path(
+                        image_path=todo.image_path, todo_id=todo.id
+                    )
+                    is None
+                ):
+                    image_paths_to_delete.append(todo.image_path)
+
+            for image_path in image_paths_to_delete:
+                await delete_image(image_path)
+
+            await uow_session.todo.delete_by_ids(todo_ids)
+
+            for todo_id in todo_ids:
+                try:
+                    await uow_session.elastic.delete_todo(todo_id=todo_id)
+                except Exception as e:
+                    logger.error("Elastic delete failed: %s", e)
+
+    async def delete_all_user_todos(self, uow_session: UnitOfWork, user_id: int) -> int:
+        """
+        Удаление всех todo пользователя
+        Returns: количество удаленных записей
+        """
+        async with uow_session.start():
+            user_todos = await uow_session.todo.get_todos_by_author_id(
+                author_id=user_id
+            )
+            if not user_todos:
+                logger.info("No user todos found")
+                return 0
+            logger.info(
+                "Deleting all todos for user %d, count: %d", user_id, len(user_todos)
+            )
+
+            todo_ids = [todo.id for todo in user_todos]
+
+            image_paths_to_delete = []
+            for todo in user_todos:
+                if todo.image_path:
+                    # Проверяем, используется ли изображение другими todo (любых пользователей)
+                    is_image_used_elsewhere = (
+                        await uow_session.todo.is_image_used_by_other_todos(
+                            image_path=todo.image_path, exclude_todo_id=todo.id
+                        )
+                    )
+                    if not is_image_used_elsewhere:
+                        image_paths_to_delete.append(todo.image_path)
+
+            # Удаляем изображения
+            for image_path in set(
+                image_paths_to_delete
+            ):  # используем set для уникальности
+                try:
+                    await delete_image(image_path)
+                except Exception as e:
+                    logger.error(f"Failed to delete image {image_path}: {e}")
+
+            await uow_session.todo.delete_by_author_id(user_id)
+            for todo_id in todo_ids:
+                try:
+                    await uow_session.elastic.delete_todo(todo_id=todo_id)
+                except Exception as e:
+                    logger.error("Elastic delete failed: %s", e)
+            return len(todo_ids)

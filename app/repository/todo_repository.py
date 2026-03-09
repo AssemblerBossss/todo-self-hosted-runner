@@ -116,3 +116,29 @@ class TodoRepository:
         )
         data = find_path.scalars().first()
         return data
+
+    async def get_todos_by_author_id(self, author_id: int):
+        """Получить все todd пользоователя"""
+        result = await self._session.execute(
+            select(Todo).where(Todo.author_id == author_id).order_by(desc(Todo.id))
+        )
+        return result.scalars().all()
+
+    async def delete_by_author_id(self, author_id: int) -> None:
+        """Удалить все todo пользователя"""
+        await self._session.execute(delete(Todo).where(Todo.author_id == author_id))
+
+    async def is_image_used_by_other_todos(
+        self, image_path: str, exclude_todo_id: int
+    ) -> bool:
+        """
+        Проверить, используется ли изображение другими todo
+        (независимо от владельца)
+        """
+        result = await self._session.execute(
+            select(func.count(Todo.id)).where(
+                and_(Todo.image_path == image_path, Todo.id != exclude_todo_id)
+            )
+        )
+        count = result.scalar_one()
+        return count > 0
