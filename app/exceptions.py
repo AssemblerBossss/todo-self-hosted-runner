@@ -27,6 +27,10 @@ class NotFoundException(AppException):
 class InvalidPageException(AppException):
     pass
 
-
+  
 class OperationNotPermittedException(AppException):
+    pass
+ 
+
+class ForbiddenException(AppException):
     pass

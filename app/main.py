@@ -11,7 +11,9 @@ from app.exceptions import (
     NotFoundException,
     InvalidPageException,
     IncorrectEmailOrPasswordException,
+    ForbiddenException
 )
+
 from app.repository.elastic_repository import ElasticRepository
 from app.routers import (
     todo_router,
@@ -19,6 +21,7 @@ from app.routers import (
     auth_router,
     not_found_handler,
     invalid_page_handler,
+    forbidden_handler,
 )
 from app.routers.exception_handlers import invalid_credentials_handler
 from app.utils import create_dirs
@@ -60,3 +63,4 @@ app.mount("/images", StaticFiles(directory="images"), name="images")
 app.add_exception_handler(NotFoundException, not_found_handler)
 app.add_exception_handler(InvalidPageException, invalid_page_handler)
 app.add_exception_handler(IncorrectEmailOrPasswordException,invalid_credentials_handler)
+app.add_exception_handler(ForbiddenException, forbidden_handler)
