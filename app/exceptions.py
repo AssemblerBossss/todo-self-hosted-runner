@@ -30,3 +30,7 @@ class NotFoundException(AppException):
 
 class InvalidPageException(AppException):
     pass
+
+
+class ForbiddenException(AppException):
+    pass

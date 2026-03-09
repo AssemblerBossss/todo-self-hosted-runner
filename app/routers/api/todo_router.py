@@ -277,11 +277,15 @@ async def delete_todo(
     todo_id: int,
     limit: int = 10,
     skip: int = 0,
+    current_user: SUserInfo = Depends(get_current_active_user),
     uow_session: UnitOfWork = Depends(get_async_uow_session),
     todo_service: TodoService = Depends(get_todo_service),
 ) -> dict[str, Any]:
-    """Delete todo"""
-    await todo_service.delete(uow_session=uow_session, todo_id=todo_id)
+    """Удаление задачи только ее владельцем"""
+
+    await todo_service.delete(
+        uow_session=uow_session, todo_id=todo_id, user_id=current_user.id
+    )
     return {
         "status": "success",
         "details": "Todo deleted",
@@ -292,33 +296,25 @@ async def delete_todo(
 
 @todo_router.delete("/delete/", status_code=status.HTTP_200_OK)
 async def delete_todos(
+    todo_service: TodoService = Depends(get_todo_service),
+    current_user: SUserInfo = Depends(get_current_active_user),
     uow_session: UnitOfWork = Depends(get_async_uow_session),
     limit: int = 10,
     skip: int = 0,
     start: int = 0,
     end: int = 0,
 ):
-    count = await uow_session.todo.get_count_todos()
-    pages = math.ceil(count / limit)
+    """Удаление всех задач текущего пользователя"""
 
-    if skip > pages or start > end:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect range"
-        )
-
-    await uow_session.todo.delete_todos(skip, limit, start, end)
-
-    if os.path.exists("images"):
-        for filename in os.listdir("images"):
-            file_path = os.path.join("images", filename)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
+    deleted_count = await todo_service.delete_all_user_todos(
+        uow_session=uow_session,
+        user_id=current_user.id,
+    )
 
     return {
         "status": "success",
-        "details": "Todos deleted",
-        "limit": limit,
-        "skip": skip,
+        "deleted_count": deleted_count,
+        "details": f"Successfully deleted {deleted_count} todos",
     }
 
 
