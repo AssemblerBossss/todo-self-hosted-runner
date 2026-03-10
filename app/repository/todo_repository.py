@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from collections.abc import Sequence
 from sqlalchemy import select, delete, update, func, desc, distinct, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,7 +71,9 @@ class TodoRepository:
         """
         self._session.add(todo)
 
-    async def update(self, todo_id: int, values: dict) -> None:
+    async def update(self, todo_id: int, values: dict, user_id: int) -> None:
+        values["updated_at"] = datetime.now(timezone.utc)
+        values["updated_by"] = user_id
         await self._session.execute(
             update(Todo).where(Todo.id == todo_id).values(**values)
         )

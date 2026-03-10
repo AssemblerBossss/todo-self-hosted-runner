@@ -233,6 +233,8 @@ def create_russian_analyzer_mapping():
                 },
                 "tag": {"type": "keyword"},
                 "created_at": {"type": "date"},
+                "updated_at": {"type": "date"},
+                "updated_by": {"type": "integer"},
                 "completed": {"type": "boolean"},
                 "completed_at": {"type": "date"},
                 "classification_level": {"type": "keyword"},
@@ -315,6 +317,10 @@ class ElasticRepository:
                 "details": todo.details,
                 "tag": todo.tag,
                 "created_at": todo.created_at.isoformat() if todo.created_at else None,
+                "updated_at": (
+                    todo.updated_at.isoformat() if todo.updated_at else None
+                ),
+                "updated_by": todo.updated_by,
                 "completed": todo.completed,
                 "completed_at": (
                     todo.completed_at.isoformat() if todo.completed_at else None
