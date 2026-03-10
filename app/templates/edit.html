@@ -39,6 +39,20 @@
     </div>
 
     <div class="form-group">
+        <label>Последнее редактирование:</label>
+        <input type="text" class="form-control"
+           value="{% if todo.updated_at %}{{ todo.updated_at.strftime('%Y-%m-%d %H:%M') }}{% else %}Ещё не редактировалась{% endif %}"
+           readonly>
+    </div>
+
+    <div class="form-group">
+        <label>Кто редактировал:</label>
+        <input type="text" class="form-control"
+           value="{% if todo.updated_by %}Пользователь ID {{ todo.updated_by }}{% else %}—{% endif %}"
+           readonly>
+    </div>
+
+    <div class="form-group">
         <label for="due_date">Дата выполнения:</label>
         <input type="text" class="form-control" id="due_date" name="due_date"
                value="{{ todo.completed_at.strftime('%Y-%m-%d %H:%M') if todo.completed_at else '' }}"

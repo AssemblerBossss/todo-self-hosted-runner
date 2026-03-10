@@ -25,11 +25,28 @@ class Todo(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Кем и когда изменено
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
     source: Mapped[str] = mapped_column(nullable=False, default=TodoSource.created)
     image_path: Mapped[str | None] = mapped_column(nullable=True, default=None)
     image_hash: Mapped[str | None] = mapped_column(nullable=True, default=None)
 
-    author = relationship("User", back_populates="todos")
+    author = relationship(
+        "User", foreign_keys=[author_id], back_populates="todos"  # Явно указываем
+    )
+
+    updated_by_user = relationship(
+        "User",
+        foreign_keys=[updated_by],  # Явно указываем
+        back_populates="updated_todos",
+    )
 
     def __repr__(self):
         return f"<Todo {self.id}>"

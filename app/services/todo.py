@@ -9,7 +9,7 @@ from app.exceptions import (
     InvalidPageException,
     NotFoundException,
     OperationNotPermittedException,
-    ForbiddenException
+    ForbiddenException,
 )
 
 from app.models import Todo as TodoORM
@@ -22,8 +22,8 @@ from app.utils import (
     hash_image,
 )
 
-
 logger = logging.getLogger(__name__)
+
 
 class TodoService:
 
@@ -178,7 +178,7 @@ class TodoService:
                         image_hash=image_hash,
                     )
             elif existing_image:
-            # Берём image_hash напрямую из текущего todo если image_path совпадает
+                # Берём image_hash напрямую из текущего todo если image_path совпадает
                 if todo.image_path == existing_image:
                     image_hash = todo.image_hash
                 else:
@@ -188,7 +188,12 @@ class TodoService:
                         raise NotFoundException(f"Image '{existing_image}' not found")
                     image_hash = data.image_hash
 
-                if await uow_session.todo.get_todos_by_image_path(todo.image_path, todo.id) is None:
+                if (
+                    await uow_session.todo.get_todos_by_image_path(
+                        todo.image_path, todo.id
+                    )
+                    is None
+                ):
                     await delete_image(todo.image_path)
 
                 todo_change = TodoSchema(
@@ -217,7 +222,9 @@ class TodoService:
             todo_change.source = TodoSource(todo.source)
 
             await uow_session.todo.update(
-                todo_id=todo_id, values=todo_change.model_dump(exclude={"id"})
+                todo_id=todo_id,
+                values=todo_change.model_dump(exclude={"id"}),
+                user_id=user.id,
             )
         try:
             await uow_session.elastic.update_todo(todo_id, todo)

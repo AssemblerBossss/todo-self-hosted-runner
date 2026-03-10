@@ -35,4 +35,18 @@ class User(Base):
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
-    todos = relationship("Todo", back_populates="author", cascade="all, delete-orphan")
+    # Todos созданные пользователем
+    todos = relationship(
+        "Todo",
+        foreign_keys="[Todo.author_id]",  # Явно указываем поле
+        back_populates="author",
+        cascade="all, delete-orphan",
+    )
+
+    # Todos обновленные пользователем (НОВОЕ)
+    updated_todos = relationship(
+        "Todo",
+        foreign_keys="[Todo.updated_by]",  # Явно указываем поле
+        back_populates="updated_by_user",
+        cascade="all, delete-orphan",
+    )
