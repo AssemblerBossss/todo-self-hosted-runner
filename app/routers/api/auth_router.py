@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Request, Form, status
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
@@ -139,6 +141,60 @@ async def refresh(
 
     # Обновляем куки с новыми токенами
     response = JSONResponse({"access_token": tokens.access_token})
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {tokens.access_token}",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=tokens.expires_in,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=f"Bearer {tokens.refresh_token}",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/auth",
+    )
+    return response
+
+
+@auth_router.get("/refresh-and-redirect")
+async def refresh_and_redirect(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    request: Request,
+    next: str = "/",
+):
+    # Защита от open redirect
+    parsed = urlparse(next)
+    if parsed.netloc:
+        next = "/"
+
+    raw = request.cookies.get("refresh_token")
+    if not raw:
+        raise InvalidCredentials("Refresh token missing")
+
+    refresh_token = extract_bearer_token(raw)
+    if not refresh_token:
+        raise InvalidCredentials("Invalid refresh token format")
+
+    try:
+        tokens = await auth_service.refresh_tokens(
+            refresh_token=refresh_token,
+            uow_session=uow_session,
+        )
+    except Exception:
+        response = RedirectResponse("/auth/login", status_code=302)
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token", path="/auth")
+        return response
+
+    # Единственное отличие от твоего /refresh — редирект вместо JSONResponse
+    response = RedirectResponse(url=next, status_code=302)
     response.set_cookie(
         key="access_token",
         value=f"Bearer {tokens.access_token}",

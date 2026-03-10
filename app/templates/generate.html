@@ -18,7 +18,7 @@
 
         const formData = new FormData(this);
 
-        fetch('/todo/generate/', {
+        fetchWithAuth('/todo/generate/', {
             method: 'POST',
             body: formData
         })
