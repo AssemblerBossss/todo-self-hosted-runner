@@ -12,6 +12,7 @@ from app.exceptions import (
     UserAlreadyExists,
     InactiveUserException,
     IncorrectEmailOrPasswordException,
+    InvalidCredentials,
 )
 from app.utils import (
     verify_password,
@@ -116,3 +117,47 @@ class AuthService:
     ) -> None:
         async with uow_session.start():
             await uow_session.token.revoke_all_user_tokens(user_id=user_id)
+
+    async def refresh_tokens(
+        self,
+        *,
+        refresh_token: str,
+        uow_session: UnitOfWork,
+    ) -> Token:
+        async with uow_session.start():
+            token_record = await uow_session.token.validate_refresh_token(refresh_token)
+            if not token_record:
+                raise InvalidCredentials("Invalid or expired refresh token")
+
+            user = await uow_session.auth.find_one_or_none_by_id(token_record.user_id)
+            if not user or not user.is_active:
+                raise InvalidCredentials("User not found or inactive")
+
+            # Ротация — старый отзываем, создаём новый
+            await uow_session.token.revoke_refresh_token(refresh_token)
+
+            new_refresh_token = create_refresh_token()
+            expires_at = datetime.now(UTC) + timedelta(
+                days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+            )
+
+            await uow_session.token.create_refresh_token(
+                refresh_token=new_refresh_token,
+                user_id=user.id,
+                expires_at=expires_at,
+            )
+
+            token_data = {
+                "user_id": user.id,
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active,
+            }
+            access_token = create_access_token(data=token_data)
+
+        return Token(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            token_type="Bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )

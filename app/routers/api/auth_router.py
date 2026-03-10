@@ -1,16 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Form, status
+from fastapi import APIRouter, Depends, Request, Form, status
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, HTMLResponse
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from typing import Annotated
 
+
 from app.dependencies import get_auth_service
-from app.exceptions import UserAlreadyExists, InactiveUserException, IncorrectEmailOrPasswordException
-from app.utils import OAuth2PasswordBearerWithCookie
+from app.exceptions import (
+    UserAlreadyExists,
+    InactiveUserException,
+    IncorrectEmailOrPasswordException,
+    InvalidCredentials,
+)
+from app.utils import OAuth2PasswordBearerWithCookie, extract_bearer_token
 from app.schemas import User, SUserRegister, SUserAuth
 from app.core import get_async_uow_session, UnitOfWork
 from app.services import AuthService
 from app.routers.dependencies import get_current_user
+from app.config import settings
 
 # pylint: disable=invalid-name
 templates = Jinja2Templates(directory="app/templates")
@@ -36,25 +42,12 @@ async def login(
     user_agent = request.headers.get("User-Agent")
     ip_address = request.client.host if request.client else None
 
-    try:
-        tokens = await auth_service.login_user(
-            user_data=user_data,
-            user_agent=user_agent,
-            ip_address=ip_address,
-            uow_session=uow_session,
-        )
-    except IncorrectEmailOrPasswordException:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Incorrect username or password"},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    except InactiveUserException:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Inactive user"},
-            status_code=400,
-        )
+    tokens = await auth_service.login_user(
+        user_data=user_data,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        uow_session=uow_session,
+    )
 
     response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
     response.set_cookie(
@@ -73,7 +66,7 @@ async def login(
         httponly=True,
         secure=False,
         samesite="lax",
-        max_age=tokens.expires_in,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/auth",  # работает для /auth/refresh и /auth/logout
     )
     return response
@@ -123,6 +116,49 @@ async def logout(
             pass  # не важно, cookie уже удалены
 
     return response
+
+
+@auth_router.post("/refresh")
+async def refresh(
+    request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+):
+    raw = request.cookies.get("refresh_token")
+    if not raw:
+        raise InvalidCredentials("Refresh token missing")
+
+    refresh_token = extract_bearer_token(raw)
+    if not refresh_token:
+        raise InvalidCredentials("Invalid refresh token format")
+
+    tokens = await auth_service.refresh_tokens(
+        refresh_token=refresh_token,
+        uow_session=uow_session,
+    )
+
+    # Обновляем куки с новыми токенами
+    response = JSONResponse({"access_token": tokens.access_token})
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {tokens.access_token}",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=tokens.expires_in,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=f"Bearer {tokens.refresh_token}",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/auth",
+    )
+    return response
+
 
 @auth_router.get("/users/me")
 async def read_users_me(

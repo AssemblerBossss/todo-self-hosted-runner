@@ -11,7 +11,9 @@ from app.exceptions import (
     NotFoundException,
     InvalidPageException,
     IncorrectEmailOrPasswordException,
-    ForbiddenException
+    ForbiddenException,
+    InvalidCredentials,
+    InactiveUserException,
 )
 
 from app.repository.elastic_repository import ElasticRepository
@@ -23,7 +25,11 @@ from app.routers import (
     invalid_page_handler,
     forbidden_handler,
 )
-from app.routers.exception_handlers import invalid_credentials_handler
+from app.routers.exception_handlers import (
+    invalid_credentials_handler,
+    incorrect_email_or_password_handler,
+    inactive_user_handler,
+)
 from app.utils import create_dirs
 from app.middleware import JwtAuthMiddleware
 
@@ -62,5 +68,7 @@ app.mount("/images", StaticFiles(directory="images"), name="images")
 
 app.add_exception_handler(NotFoundException, not_found_handler)
 app.add_exception_handler(InvalidPageException, invalid_page_handler)
-app.add_exception_handler(IncorrectEmailOrPasswordException,invalid_credentials_handler)
+app.add_exception_handler(IncorrectEmailOrPasswordException, incorrect_email_or_password_handler)
+app.add_exception_handler(InvalidCredentials, invalid_credentials_handler)
 app.add_exception_handler(ForbiddenException, forbidden_handler)
+app.add_exception_handler(InactiveUserException, inactive_user_handler)

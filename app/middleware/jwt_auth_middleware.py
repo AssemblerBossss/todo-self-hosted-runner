@@ -4,33 +4,9 @@ from fastapi import Request, Response
 from starlette.datastructures import URL
 from starlette.responses import JSONResponse
 from logging import getLogger
-from app.utils import verify_access_token
+from app.utils import verify_access_token, extract_bearer_token
 
 logger = getLogger(__name__)
-
-
-def _extract_bearer_token(authorization_header: str | None) -> str | None:
-    """
-    Извлекает JWT токен из заголовка Authorization.
-
-    Ожидаемый формат: "Bearer <token>"
-
-    Args:
-        authorization_header: значение заголовка Authorization
-
-    Returns:
-        Токен или None, если заголовок отсутствует или имеет неверный формат
-    """
-    if authorization_header is None:
-        logger.error("Auth Middleware: authorization_header is None")
-        return None
-
-    parts = authorization_header.strip().split()
-
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        logger.error("Auth Middleware: authorization_header is not Bearer")
-        return None
-    return parts[1]
 
 
 def extract_token(request: Request) -> str | None:
@@ -41,12 +17,12 @@ def extract_token(request: Request) -> str | None:
     token = request.cookies.get("access_token")
     if token:
         logger.debug("Token found in cookie")
-        return _extract_bearer_token(token)
+        return extract_bearer_token(token)
 
     auth_header = request.headers.get("Authorization")
     if auth_header:
         logger.debug("Token found in Authorization header")
-        return _extract_bearer_token(auth_header)
+        return extract_bearer_token(auth_header)
 
     logger.debug("No token found in request")
     return None
@@ -135,7 +111,7 @@ class JwtAuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
 
         original_path = request.url.path
-        #normalized_path = original_path.rstrip("/")
+        # normalized_path = original_path.rstrip("/")
         normalized_path = original_path
 
         # if original_path != normalized_path:

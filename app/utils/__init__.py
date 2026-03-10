@@ -9,7 +9,7 @@ from .utils import (
     OAuth2PasswordBearerWithCookie,
 )
 
-from .jwt_utils import create_access_token, create_refresh_token, verify_access_token
+from .jwt_utils import create_access_token, create_refresh_token, verify_access_token, extract_bearer_token
 from .security import get_password_hash, authenticate_user, verify_password
 
 __all__ = [
@@ -27,4 +27,5 @@ __all__ = [
     "get_password_hash",
     "authenticate_user",
     "verify_password",
+    "extract_bearer_token"
 ]
