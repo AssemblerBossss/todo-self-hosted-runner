@@ -75,35 +75,30 @@ def verify_access_token(token: str) -> dict | None:
         return None
 
 
-# async def get_current_user(
-#     token: str = Depends(get_access_token),
-#     session: AsyncSession = Depends(get_session_without_commit),
-# ) -> User:
-#     """Проверяем access_token и возвращаем пользователя."""
-#     try:
-#         # Декодируем токен
-#         payload = jwt.decode(
-#             token, app_settings.JWT_SECRET_KEY, algorithms=[app_settings.JWT_ALGORITHM]
-#         )
-#     except ExpiredSignatureError:
-#         raise TokenExpiredException
-#     except JWTError:
-#         # Общая ошибка для токенов
-#         raise NoJwtException
-#
-#     expire: str = payload.get("exp")
-#     expire_time = datetime.fromtimestamp(int(expire), tz=timezone.utc)
-#     if (not expire) or (expire_time < datetime.now(timezone.utc)):
-#         raise TokenExpiredException
-#
-#     user_id: str = payload.get("sub")
-#     if not user_id:
-#         raise NoUserIdException
-#
-#     user = await UserRepository(session).find_one_or_none_by_id(user_id=int(user_id))
-#     if not user:
-#         raise UserNotFoundException
-#     return user
+def extract_bearer_token(authorization_header: str | None) -> str | None:
+    """
+    Извлекает JWT токен из заголовка Authorization.
+
+    Ожидаемый формат: "Bearer <token>"
+
+    Args:
+        authorization_header: значение заголовка Authorization
+
+    Returns:
+        Токен или None, если заголовок отсутствует или имеет неверный формат
+    """
+    if authorization_header is None:
+        logger.error("Auth Middleware: authorization_header is None")
+        return None
+
+    parts = authorization_header.strip().split()
+
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        logger.error("Auth Middleware: authorization_header is not Bearer")
+        return None
+    return parts[1]
+
+
 #
 #
 # async def get_admin_user(
