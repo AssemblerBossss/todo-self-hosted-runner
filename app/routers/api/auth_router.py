@@ -3,6 +3,9 @@ from fastapi import APIRouter, Depends, Request, Form, status, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from typing import Annotated
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.dependencies import get_auth_service
 from app.exceptions import (
@@ -41,7 +44,7 @@ def _set_auth_cookies(response: Response, tokens: Token) -> None:
         secure=False,
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/auth",
+        path="/",
     )
 
 
@@ -149,12 +152,15 @@ async def refresh_and_redirect(
     request: Request,
     next: str = "/",
 ):
+    logger.info("refresh-and-redirect: next=%s", next)
+
     # Защита от open redirect
     parsed = urlparse(next)
     if parsed.netloc:
         next = "/"
 
     raw = request.cookies.get("refresh_token")
+    logger.info("refresh_token cookie: %s", raw[:20] + "..." if raw else "None")
     if not raw:
         raise InvalidCredentials("Refresh token missing")
 
@@ -167,14 +173,16 @@ async def refresh_and_redirect(
             refresh_token=refresh_token,
             uow_session=uow_session,
         )
-    except Exception:
+    except Exception as e:
+        logger.error("Token refresh failed: %s", e)
         response = RedirectResponse("/auth/login", status_code=302)
         response.delete_cookie("access_token")
         response.delete_cookie("refresh_token", path="/auth")
         return response
 
+    logger.info("Tokens refreshed successfully, redirecting to %s", next)
     # Единственное отличие от твоего /refresh — редирект вместо JSONResponse
-    response = RedirectResponse(url=next, status_code=302)
+    response = RedirectResponse(url=next, status_code=status.HTTP_303_SEE_OTHER)
     _set_auth_cookies(response, tokens)
     return response
 

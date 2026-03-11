@@ -113,44 +113,42 @@ class JwtAuthMiddleware(BaseHTTPMiddleware):
     # Пути к статике тоже публичные
     PUBLIC_PREFIXES = ("/static/",)
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         path = request.url.path
 
         # Публичные пути — пропускаем
-        if path in self.PUBLIC_PATHS or any(path.startswith(p) for p in self.PUBLIC_PREFIXES):
+        if path in self.PUBLIC_PATHS or any(
+            path.startswith(p) for p in self.PUBLIC_PREFIXES
+        ):
             return await call_next(request)
 
-        is_valid, user_payload = _check_authorization(request)
+        # Проверяем авторизацию
+        error_response, user_payload = _check_authorization(request)
 
-        if not is_valid:
-            has_refresh = bool(request.cookies.get("refresh_token"))
+        # Если есть ошибка — не авторизован
+        if error_response is not None:
+            is_browser = _is_browser_request(request)
 
-            if has_refresh:
-                if _is_browser_request(request):
-                    # Браузерный переход — редиректим на refresh-and-redirect
-                    next_url = request.url.path
-                    if request.url.query:
-                        next_url += f"?{request.url.query}"
-                    return RedirectResponse(
-                        url=f"/auth/refresh-and-redirect?next={next_url}",
-                        status_code=302,
-                    )
-                else:
-                    # fetch/AJAX запрос — отдаём 401, JS сам вызовет /auth/refresh
-                    return JSONResponse(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        content={"detail": "Token expired"},
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
+            if is_browser:
+                # Браузерный запрос — редирект на refresh endpoint
+                # Он сам проверит есть ли refresh_token в куках
+                next_url = request.url.path
+                if request.url.query:
+                    next_url += f"?{request.url.query}"
+                return RedirectResponse(
+                    url=f"/auth/refresh-and-redirect?next={next_url}",
+                    status_code=302,
+                )
             else:
-                # Нет refresh токена вообще
-                if _is_browser_request(request):
-                    return RedirectResponse(url="/auth/login", status_code=302)
+                # API/fetch — 401, JS обработает
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Missing authentication token"},
+                    content={"detail": "Token expired"},
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
+        # Успешная авторизация
         request.state.user = user_payload
         return await call_next(request)
