@@ -231,7 +231,7 @@
             const todoId = this.dataset.todoId;
 
             const action = () => {
-                fetch(`/todo/delete/${todoId}/`, {
+                fetchWithAuth(`/todo/delete/${todoId}/`, {
                     method: 'DELETE'
                 })
                     .then(res => res.json())
@@ -262,7 +262,7 @@
             formData.append('created_at', todoDate)
             formData.append('image_path', todoImage)
 
-            fetch(`/todo/edit/${todoId}/`, {
+            fetchWithAuth(`/todo/edit/${todoId}/`, {
                 method: 'PUT',
                 body: formData
             })
@@ -300,7 +300,7 @@
 
     const deleteAllTasks = () => {
         const action = () => {
-            fetch(`/todo/delete/`, {
+            fetchWithAuth(`/todo/delete/`, {
                 method: 'DELETE'
             })
                 .then(res => res.json())
@@ -345,7 +345,7 @@
         params.set('start', startIndex.toString());
         params.set('end', endIndex.toString());
 
-        fetch(`/todo/delete/?${params.toString()}`, {
+        fetchWithAuth(`/todo/delete/?${params.toString()}`, {
             method: 'DELETE'
         })
             .then(res => res.json())

@@ -2,7 +2,7 @@ from starlette import status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from fastapi import Request, Response
 from starlette.datastructures import URL
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from logging import getLogger
 from app.utils import verify_access_token, extract_bearer_token
 
@@ -73,6 +73,9 @@ def _check_authorization(request: Request) -> tuple[JSONResponse | None, dict | 
         )
     return None, user_payload
 
+def _is_browser_request(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
 
 class JwtAuthMiddleware(BaseHTTPMiddleware):
     """
@@ -104,31 +107,48 @@ class JwtAuthMiddleware(BaseHTTPMiddleware):
         "/auth/token",
         "/auth/refresh",
         "/auth/logout",
+        "/auth/refresh-and-redirect",
     }
+
+    # Пути к статике тоже публичные
+    PUBLIC_PREFIXES = ("/static/",)
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
+        path = request.url.path
 
-        original_path = request.url.path
-        # normalized_path = original_path.rstrip("/")
-        normalized_path = original_path
-
-        # if original_path != normalized_path:
-        #     _normalize_path(
-        #         request=request,
-        #         original_path=original_path,
-        #         normalized_path=normalized_path,
-        #     )
-        if normalized_path in self.PUBLIC_PATHS:
+        # Публичные пути — пропускаем
+        if path in self.PUBLIC_PATHS or any(
+            path.startswith(p) for p in self.PUBLIC_PREFIXES
+        ):
             return await call_next(request)
 
-        error_response, user_payload = _check_authorization(request=request)
+        # Проверяем авторизацию
+        error_response, user_payload = _check_authorization(request)
 
-        if error_response:
-            return error_response
+        # Если есть ошибка — не авторизован
+        if error_response is not None:
+            is_browser = _is_browser_request(request)
 
+            if is_browser:
+                # Браузерный запрос — редирект на refresh endpoint
+                # Он сам проверит есть ли refresh_token в куках
+                next_url = request.url.path
+                if request.url.query:
+                    next_url += f"?{request.url.query}"
+                return RedirectResponse(
+                    url=f"/auth/refresh-and-redirect?next={next_url}",
+                    status_code=302,
+                )
+            else:
+                # API/fetch — 401, JS обработает
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Token expired"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        # Успешная авторизация
         request.state.user = user_payload
-
-        response = await call_next(request)
-        return response
+        return await call_next(request)

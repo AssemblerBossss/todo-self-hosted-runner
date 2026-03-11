@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.innerText = "Загрузка...";
 
         try {
-            const response = await fetch("/elastic/search/top-words/?limit=10");
+            const response = await fetchWithAuth("/elastic/search/top-words/?limit=10");
             const data = await response.json();
 
             list.innerHTML = "";

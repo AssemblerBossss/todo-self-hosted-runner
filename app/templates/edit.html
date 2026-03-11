@@ -92,7 +92,7 @@
         e.preventDefault();
 
         const formData = new FormData(this);
-        fetch('/todo/edit/{{ todo.id }}/', {
+        fetchWithAuth('/todo/edit/{{ todo.id }}/', {
             method: 'PUT',
             body: formData
         })

@@ -26,12 +26,13 @@ async def invalid_page_handler(request: Request, exc: Exception) -> JSONResponse
     )
 
 
-# async def incorrect_email_or_password_handler(request: Request, exc: Exception) -> JSONResponse:
-#     assert isinstance(exc, IncorrectEmailOrPasswordException)
-#     return JSONResponse(
-#         status_code=status.HTTP_401_UNAUTHORIZED,
-#         content={"Incorrect email or password": str(exc)},
-#     )
+async def incorrect_email_or_password_handler(request: Request, exc: Exception) -> HTMLResponse:
+    assert isinstance(exc, IncorrectEmailOrPasswordException)
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Incorrect username or password"},
+        status_code=400
+    )
 
 
 async def forbidden_handler(request: Request, exc: Exception) -> JSONResponse:

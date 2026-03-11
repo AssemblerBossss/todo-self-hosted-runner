@@ -16,7 +16,7 @@
             const form = document.querySelector("#importForm")
             form.addEventListener("submit", (e) => {
                 e.preventDefault();
-                const action = () => fetch("/todo/import/", {
+                const action = () => fetchWithAuth("/todo/import/", {
                     method: 'POST',
                     body: new FormData(form)
                 })
