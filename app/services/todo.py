@@ -15,6 +15,8 @@ from app.exceptions import (
 from app.models import Todo as TodoORM
 from app.schemas import Tags, TodoSource, SUserInfo, UserRole, Todo as TodoSchema
 from app.core import UnitOfWork
+from app.services.search_index import build_search_document
+from app.services.search_index import enrich_todo_display_list
 from app.utils import (
     generate_random_filename,
     load_image,
@@ -26,6 +28,21 @@ logger = logging.getLogger(__name__)
 
 
 class TodoService:
+    @staticmethod
+    async def _sync_todo_to_search_index(
+        uow_session: UnitOfWork,
+        todo_id: int,
+    ) -> None:
+        async with uow_session.start():
+            todo = await uow_session.todo.get_todo_by_id(todo_id)
+
+        if not todo:
+            return
+
+        document = build_search_document(todo)
+        await uow_session.elastic.ensure_index_exists()
+        await uow_session.elastic.index_document(todo_id, document)
+
 
     @staticmethod
     def _parse_data(date_str: str | None) -> datetime | None:
@@ -77,7 +94,7 @@ class TodoService:
 
             await uow_session.todo.add(todo)
         try:
-            await uow_session.elastic.index_todo(todo)
+            await self._sync_todo_to_search_index(uow_session, todo.id)
         except Exception as e:
             logger.error("Elastic indexing failed: %s", e)
 
@@ -113,7 +130,7 @@ class TodoService:
                 tag=tag,
             )
 
-        return todos, skip, pages
+        return enrich_todo_display_list(todos), skip, pages
 
     async def update(
         self,
@@ -227,7 +244,7 @@ class TodoService:
                 user_id=user.id,
             )
         try:
-            await uow_session.elastic.update_todo(todo_id, todo)
+            await self._sync_todo_to_search_index(uow_session, todo_id)
         except Exception as e:
             logger.error("Elastic update failed: %s", e)
 

@@ -12,10 +12,14 @@ from app.repository.token_repository import TokenRepository
 
 
 class UnitOfWork:
-    def __init__(self, session_factory: async_sessionmaker, es_client: AsyncElasticsearch):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker,
+        es_client: AsyncElasticsearch | None = None,
+    ):
         self.session_factory = session_factory
         self._session: AsyncSession | None = None
-        self.es_client: AsyncElasticsearch = es_client
+        self.es_client: AsyncElasticsearch | None = es_client
 
 
     @asynccontextmanager
@@ -36,6 +40,8 @@ class UnitOfWork:
 
     @property
     def elastic(self) -> ElasticRepository:
+        if self.es_client is None:
+            raise RuntimeError("Elasticsearch client is not configured for this UnitOfWork")
         return ElasticRepository(self.es_client)
 
     @property
