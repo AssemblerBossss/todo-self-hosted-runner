@@ -37,6 +37,7 @@ services:
       - ./app:/code/app
       - ./data:/code/data
       - ./scripts:/code/scripts
+      - ./docker_scripts:/code/docker_scripts
       - ./images:/code/images
       - ./files:/code/files
       - ./migrations:/code/migrations
