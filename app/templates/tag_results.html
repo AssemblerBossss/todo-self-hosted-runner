@@ -6,7 +6,7 @@
 
         <div class="d-flex align-items-center justify-content-between mt-4 mb-3">
             <h2 class="h4 mb-0">🔍 Результаты поиска</h2>
-            <a href="/elastic/search/" class="btn btn-sm btn-outline-secondary">← Назад</a>
+            <a href="/todo/search/" class="btn btn-sm btn-outline-secondary">← Назад</a>
         </div>
 
         {% if subtitle %}
@@ -18,7 +18,7 @@
             <div class="card mb-3 shadow-sm">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
-                        <h5 class="card-title mb-1">{{ todo.title }}</h5>
+                        <h5 class="card-title mb-1">{{ todo.display_title or todo.title }}</h5>
                         <div class="d-flex gap-2 align-items-center">
                             {% if todo.tag %}
                             <span class="badge 
@@ -39,7 +39,7 @@
                     </div>
 
                     {% if todo.details %}
-                    <p class="card-text text-muted mt-2 mb-2">{{ todo.details }}</p>
+                    <p class="card-text text-muted mt-2 mb-2">{{ todo.display_details or todo.details }}</p>
                     {% endif %}
 
                     <div class="d-flex gap-3 mt-2">
