@@ -9,7 +9,7 @@
         <h3 class="h5 mb-0">Поиск и аналитика</h3>
     </div>
     <div class="card-body">
-        <form action="/todo/search/" method="post" class="mb-3">
+        <form action="/todo/list/" method="get"  class="mb-3">
             <div class="input-group">
                 <input type="text"
                        name="query"
@@ -28,10 +28,10 @@
             <a href="/todo/list/" class="btn btn-sm btn-outline-secondary">Обычный список</a>
         </div>
 
-        <form action="/todo/search/date/" method="get" class="mb-3">
+        <form action="/todo/list/" method="get" class="mb-3">
             <div class="input-group">
                 <input type="datetime-local"
-                       name="date_from"
+                       name="search_date_from"
                        class="form-control"
                        value="{{ search_date_from or '' }}"
                        required>
