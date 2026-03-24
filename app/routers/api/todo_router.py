@@ -1,6 +1,7 @@
 import base64
 import logging
 import io
+import os
 from typing import Any
 import squarify
 import shutil
@@ -42,19 +43,6 @@ todo_router = APIRouter(prefix="/todo", tags=["Todo"])
 templates = Jinja2Templates(directory="app/templates")
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_search_todos_from_hits(
-    uow_session: UnitOfWork,
-    hits: list[dict],
-) -> list[dict]:
-    todo_ids = [hit["todo_id"] for hit in hits]
-    if not todo_ids:
-        return []
-
-    async with uow_session.start():
-        todos = await uow_session.todo.get_todos_by_ids(todo_ids)
-    return merge_search_hits_with_todos(hits, todos)
 
 
 def _todos_page_context(
@@ -119,8 +107,9 @@ async def get_home(request: Request):
 @todo_router.get("/list/", status_code=status.HTTP_200_OK)
 async def get_todos(
     request: Request,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
     limit: int = 10,
     skip: int = 0,
     created_from: str = None,
@@ -129,85 +118,8 @@ async def get_todos(
     query: str | None = None,
     search_tag: str | None = None,
     search_date_from: str | None = None,
-    todo_service: TodoService = Depends(get_todo_service),
 ):
-    author_id = current_user.id if current_user.role == UserRole.VIEWER else None
-
-    if query:
-        hits = await uow_session.elastic.search_todos(
-            query_text=query,
-            tag=tag.value if tag else None,
-            limit=limit,
-            skip=skip,
-            author_id=author_id,
-        )
-        todos = await _get_search_todos_from_hits(uow_session, hits)
-        return templates.TemplateResponse(
-            "todos.html",
-            _todos_page_context(
-                request,
-                todos=todos,
-                limit=limit,
-                skip=0,
-                pages=1,
-                created_from=created_from,
-                created_to=created_to,
-                tag=tag,
-                search_query=query,
-                search_mode="query",
-                subtitle=f"Результаты поиска по запросу: {query}",
-            ),
-        )
-
-    if search_tag:
-        results = enrich_todo_display_list(
-            await uow_session.elastic.search_by_tag(
-                search_tag.capitalize(),
-                author_id=author_id,
-            )
-        )
-        return templates.TemplateResponse(
-            "todos.html",
-            _todos_page_context(
-                request,
-                todos=results,
-                limit=limit,
-                skip=0,
-                pages=1,
-                created_from=created_from,
-                created_to=created_to,
-                tag=tag,
-                search_mode="tag",
-                subtitle=f"Результаты поиска по тегу: {search_tag.capitalize()}",
-            ),
-        )
-
-    if search_date_from:
-        date_from_dt = datetime.fromisoformat(search_date_from)
-        results = enrich_todo_display_list(
-            await uow_session.elastic.search_by_date(
-                date_from_dt.isoformat(),
-                author_id=author_id,
-            )
-        )
-        return templates.TemplateResponse(
-            "todos.html",
-            _todos_page_context(
-                request,
-                todos=results,
-                limit=limit,
-                skip=0,
-                pages=1,
-                created_from=created_from,
-                created_to=created_to,
-                tag=tag,
-                search_date_from=search_date_from,
-                search_mode="date",
-                subtitle=f"Результаты поиска после {date_from_dt.strftime('%d.%m.%Y %H:%M')}",
-            ),
-        )
-
-    todos, skip, pages = await todo_service.get_todos(
+    result = await todo_service.get_todos_page(
         uow_session=uow_session,
         current_user=current_user,
         limit=limit,
@@ -215,28 +127,35 @@ async def get_todos(
         created_from=created_from,
         created_to=created_to,
         tag=tag,
+        query=query,
+        search_tag=search_tag,
+        search_date_from=search_date_from,
     )
 
     return templates.TemplateResponse(
         "todos.html",
         _todos_page_context(
             request,
-            todos=todos,
+            todos=result["todos"],
             limit=limit,
-            skip=skip,
-            pages=pages,
+            skip=result["skip"],
+            pages=result["pages"],
             created_from=created_from,
             created_to=created_to,
             tag=tag,
+            search_query=query,
+            search_date_from=search_date_from,
+            search_mode=result["search_mode"],
+            subtitle=result["subtitle"],
         ),
     )
 
 
 @todo_router.get("/search/top-words/", status_code=status.HTTP_200_OK)
 async def search_by_top_words(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     limit: int = 10,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
 ):
     """Возвращает топ-N популярных слов в формате JSON."""
     try:
@@ -251,9 +170,9 @@ async def search_by_top_words(
 @todo_router.get("/notes-per-day/", response_class=HTMLResponse)
 async def notes_per_day_chart(
     request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     days: int = 30,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
 ):
     """Страница с графиком активности пользователей"""
     try:
@@ -289,9 +208,9 @@ async def notes_per_day_chart(
 
 @todo_router.get("/api/notes-per-day/")
 async def notes_per_day_api(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     days: int = 30,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
 ):
     """API endpoint для получения данных графика в JSON."""
     try:
@@ -341,31 +260,21 @@ async def add_todo(
 @todo_router.get("/edit/{todo_id}/", status_code=status.HTTP_200_OK)
 async def get_todo(
     request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
     todo_id: int,
     limit: int = 10,
     skip: int = 0,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    user: SUserInfo = Depends(get_current_active_user),
 ):
     """Get todo"""
-    async with uow_session.start():
-        todo = await uow_session.todo.get_todo_by_id(todo_id)
-        if not todo:
-            logger.warning(f"Todo not found: {todo_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Not found todo by this id: {todo_id}",
-            )
+    todo, images = await todo_service.get_todo_for_edit(
+        uow_session=uow_session,
+        todo_id=todo_id,
+        user=user,
+    )
 
-        images = await uow_session.todo.get_all_image_paths()
-
-        if todo.author_id != user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Вы можете редактировать только свои задачи",
-            )
-
-    logger.info(f"Getting todo: {todo}")
+    logger.info("Getting todo: %s", todo)
     todo = enrich_todo_display(todo)
 
     return templates.TemplateResponse(
@@ -415,12 +324,12 @@ async def edit_todo(
 
 @todo_router.delete("/delete/{todo_id}/", status_code=status.HTTP_200_OK)
 async def delete_todo(
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
     todo_id: int,
     limit: int = 10,
     skip: int = 0,
-    current_user: SUserInfo = Depends(get_current_active_user),
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    todo_service: TodoService = Depends(get_todo_service),
 ) -> dict[str, Any]:
     """Удаление задачи только ее владельцем"""
 
@@ -439,9 +348,9 @@ async def delete_todo(
 
 @todo_router.delete("/delete/", status_code=status.HTTP_200_OK)
 async def delete_todos(
-    todo_service: TodoService = Depends(get_todo_service),
-    current_user: SUserInfo = Depends(get_current_active_user),
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     limit: int = 10,
     skip: int = 0,
     start: int = 0,
@@ -467,8 +376,8 @@ async def delete_todos(
 @todo_router.get("/visualize/", status_code=status.HTTP_200_OK)
 async def visualize_todos(
     request: Request,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
 ):
     """Visualize todos as a treemap by tags"""
     author_id = current_user.id if current_user.role == UserRole.VIEWER else None
@@ -520,9 +429,7 @@ async def generate_todos(
 ):
     """Generate a number of random todos for the current user."""
     if count < 1 or count > 200:
-        raise HTTPException(
-            status_code=422, detail="Count must be between 1 and 200"
-        )
+        raise HTTPException(status_code=422, detail="Count must be between 1 and 200")
 
     logger.info("Generating %s todos for user %s", count, user.id)
     try:
@@ -548,8 +455,8 @@ async def visualize_todos(request: Request):
 
 @todo_router.post("/import")
 async def import_file(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     file: UploadFile = File(...),
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
 ):
     file_location = os.path.join("./files/", file.filename)
     with open(file_location, "wb") as buffer:
@@ -583,8 +490,8 @@ async def import_file(filename: str):
 
 @todo_router.post("/export/")
 async def export_data(
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-    current_user: SUserInfo = Depends(get_current_active_user),
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
 ):
     if current_user.role == UserRole.VIEWER:
         todos = await uow_session.todo.get_todos_by_author_id(current_user.id)
