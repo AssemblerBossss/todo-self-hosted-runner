@@ -1,4 +1,5 @@
 from elasticsearch import AsyncElasticsearch, NotFoundError
+from typing import List, Optional
 import logging
 from app.services.search_index import ALL_STOPWORDS
 from app.services.search_index import CLASSIFICATION_REPLACEMENTS
