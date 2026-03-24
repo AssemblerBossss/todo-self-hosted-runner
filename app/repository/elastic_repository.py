@@ -97,6 +97,7 @@ def create_russian_analyzer_mapping():
         "mappings": {
             "properties": {
                 "todo_id": {"type": "integer"},
+                "author_id": {"type": "integer"},
                 "title": {
                     "type": "text",
                     "analyzer": "russian_search_analyzer",
@@ -170,8 +171,14 @@ class ElasticRepository:
             logger.error("Failed to delete todo %s from index: %s", todo_id, e)
 
     async def search_todos(
-        self, query_text: str, tag: str | None = None, limit: int = 50, skip: int = 0
-    ) -> list[dict]:
+        self,
+        query_text: str,
+        tag: Optional[str] = None,
+        limit: int = 50,
+        skip: int = 0,
+        author_id: Optional[int] = None,
+    ) -> List[dict]:
+
         """
         Полнотекстовый поиск по title и details с нестрогим соответствием.
         Использует русский анализатор для учета морфологии.
@@ -227,6 +234,8 @@ class ElasticRepository:
         must_clauses = []
         if tag:
             must_clauses.append({"term": {"tag": tag}})
+        if author_id is not None:
+            must_clauses.append({"term": {"author_id": author_id}})
 
         try:
             # Убеждаемся, что индекс существует
@@ -338,45 +347,67 @@ class ElasticRepository:
             logger.error("Failed to get statistics: %s", e  )
             return {}
 
-    async def search_by_date(self, date_from: str) -> list[dict]:
+    async def search_by_date(
+        self,
+        date_from: str,
+        author_id: Optional[int] = None,
+    ) -> List[dict]:
         """Возвращает все тудушки, созданные после указанной даты"""
         try:
+            must_filters = [{"range": {"created_at": {"gte": date_from}}}]
+            if author_id is not None:
+                must_filters.append({"term": {"author_id": author_id}})
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
-                    "query": {"range": {"created_at": {"gte": date_from}}},
+                    "query": {"bool": {"filter": must_filters}},
                     "sort": [{"created_at": {"order": "desc"}}],
                 },
             )
+
             return [hit["_source"] for hit in response["hits"]["hits"]]
         except Exception as e:
             logger.error( "Failed to get search results: %s", e)
             return []
 
-    async def search_by_tag(self, tag: str) -> list[dict]:
+    async def search_by_tag(
+        self,
+        tag: str,
+        author_id: Optional[int] = None,
+    ) -> List[dict]:
         """Возвращает все тудушки с заданным тегом"""
         try:
+            filters = [{"term": {"tag": tag}}]
+            if author_id is not None:
+                filters.append({"term": {"author_id": author_id}})
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
-                    "query": {"term": {"tag": tag}},
+                    "query": {"bool": {"filter": filters}},
                     "sort": [{"created_at": {"order": "desc"}}],
                 },
             )
+
             return [hit["_source"] for hit in response["hits"]["hits"]]
         except Exception as e:
             logger.error( "Failed to get search results: %s", e)
             return []
 
-    async def get_all_todos(self, limit: int = 50, skip: int = 0):
+    async def get_all_todos(
+        self,
+        limit: int = 50,
+        skip: int = 0,
+        author_id: Optional[int] = None,
+    ):
         """Возвращает все тудушки из индекса"""
         try:
+            query = {"match_all": {}} if author_id is None else {"term": {"author_id": author_id}}
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
                     "from": skip,
                     "size": limit,
-                    "query": {"match_all": {}},
+                    "query": query,
                     "sort": [{"created_at": {"order": "desc"}}],
                 },
             )
@@ -384,12 +415,14 @@ class ElasticRepository:
         except Exception as e:
             logger.error("Failed to get all todos: %s", e)
 
-    async def get_top_words(self, limit: int = 10):
+    async def get_top_words(self, limit: int = 10, author_id: Optional[int] = None):
         try:
+            query = {"match_all": {}} if author_id is None else {"term": {"author_id": author_id}}
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
                     "size": 0,
+                    "query": query,
                     "aggs": {
                         "top_title": {"terms": {"field": "title.agg", "size": limit}},
                         "top_details": {
@@ -423,7 +456,11 @@ class ElasticRepository:
             logger.error("Failed to get top words: %s", e)
             return []
 
-    async def get_notes_per_day(self, days: int = 30) -> list[dict]:
+    async def get_notes_per_day(
+        self,
+        days: int = 30,
+        author_id: Optional[int] = None,
+    ) -> List[dict]:
         """
         Возвращает количество заметок по дням
         :param days: количество дней для анализа
@@ -434,11 +471,15 @@ class ElasticRepository:
 
             date_from = (datetime.now() - timedelta(days=days)).isoformat()
 
+            query_filters = [{"range": {"created_at": {"gte": date_from}}}]
+            if author_id is not None:
+                query_filters.append({"term": {"author_id": author_id}})
+
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
                     "size": 0,
-                    "query": {"range": {"created_at": {"gte": date_from}}},
+                    "query": {"bool": {"filter": query_filters}},
                     "aggs": {
                         "notes_per_day": {
                             "date_histogram": {

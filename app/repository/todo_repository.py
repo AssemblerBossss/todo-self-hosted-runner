@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from collections.abc import Sequence
 from sqlalchemy import select, delete, update, func, desc, distinct, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.util import deprecated
 
 from app.models import Todo
@@ -18,6 +19,7 @@ class TodoRepository:
         created_from: datetime | None = None,
         created_to: datetime | None = None,
         tag: Tags | None = None,
+        author_id: int | None = None,
     ) -> int:
         stmt = select(func.count()).select_from(Todo)
 
@@ -27,12 +29,18 @@ class TodoRepository:
             stmt = stmt.where(Todo.created_at <= created_to)
         if tag:
             stmt = stmt.where(Todo.tag == tag)
+        if author_id is not None:
+            stmt = stmt.where(Todo.author_id == author_id)
 
         result = await self._session.execute(stmt)
         return result.scalar_one()
 
     async def get_todo_by_id(self, todo_id: int) -> Todo | None:
-        result = await self._session.execute(select(Todo).where(Todo.id == todo_id))
+        result = await self._session.execute(
+            select(Todo)
+            .options(selectinload(Todo.author))
+            .where(Todo.id == todo_id)
+        )
         return result.scalar_one_or_none()
 
     async def get_many(
@@ -42,9 +50,16 @@ class TodoRepository:
         created_from: datetime | None = None,
         created_to: datetime | None = None,
         tag: Tags = None,
+        author_id: int | None = None,
     ) -> Sequence[Todo]:
 
-        stmt = select(Todo).order_by(desc(Todo.id)).offset(skip * limit).limit(limit)
+        stmt = (
+            select(Todo)
+            .options(selectinload(Todo.author))
+            .order_by(desc(Todo.id))
+            .offset(skip * limit)
+            .limit(limit)
+        )
 
         if created_from:
             stmt = stmt.where(Todo.created_at >= created_from)
@@ -52,16 +67,24 @@ class TodoRepository:
             stmt = stmt.where(Todo.created_at <= created_to)
         if tag:
             stmt = stmt.where(Todo.tag == tag)
+        if author_id is not None:
+            stmt = stmt.where(Todo.author_id == author_id)
 
         result = await self._session.execute(stmt)
         return result.scalars().all()
 
     async def get_todos_by_ids(self, todo_ids: list[int]) -> Sequence[Todo]:
-        result = await self._session.execute(select(Todo).where(Todo.id.in_(todo_ids)))
+        result = await self._session.execute(
+            select(Todo)
+            .options(selectinload(Todo.author))
+            .where(Todo.id.in_(todo_ids))
+        )
         return result.scalars().all()
 
     async def get_all(self) -> Sequence[Todo]:
-        result = await self._session.execute(select(Todo).order_by(desc(Todo.id)))
+        result = await self._session.execute(
+            select(Todo).options(selectinload(Todo.author)).order_by(desc(Todo.id))
+        )
         return result.scalars().all()
 
     async def add(self, todo: Todo) -> None:
@@ -83,6 +106,9 @@ class TodoRepository:
 
     async def delete_by_ids(self, ids: list[int]) -> None:
         await self._session.execute(delete(Todo).where(Todo.id.in_(ids)))
+
+    async def delete_all(self) -> None:
+        await self._session.execute(delete(Todo))
 
     @deprecated
     async def delete_todos(self, skip: int, limit: int, start: int, end: int):
@@ -128,13 +154,22 @@ class TodoRepository:
     async def get_todos_by_author_id(self, author_id: int):
         """Получить все todd пользоователя"""
         result = await self._session.execute(
-            select(Todo).where(Todo.author_id == author_id).order_by(desc(Todo.id))
+            select(Todo)
+            .options(selectinload(Todo.author))
+            .where(Todo.author_id == author_id)
+            .order_by(desc(Todo.id))
         )
         return result.scalars().all()
 
     async def delete_by_author_id(self, author_id: int) -> None:
         """Удалить все todo пользователя"""
         await self._session.execute(delete(Todo).where(Todo.author_id == author_id))
+
+    async def clear_updated_by_for_user(self, user_id: int) -> None:
+        """Очистить ссылки на пользователя в поле updated_by."""
+        await self._session.execute(
+            update(Todo).where(Todo.updated_by == user_id).values(updated_by=None)
+        )
 
     async def is_image_used_by_other_todos(
         self, image_path: str, exclude_todo_id: int
