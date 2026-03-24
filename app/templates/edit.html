@@ -58,7 +58,7 @@
     <div class="form-group">
         <label>Кто редактировал:</label>
         <input type="text" class="form-control"
-           value="{% if todo.updated_by %}Пользователь ID {{ todo.updated_by }}{% else %}—{% endif %}"
+           value="{% if todo.updated_by_user %}{{ todo.updated_by_user.email }}{% elif todo.updated_by %}Пользователь ID {{ todo.updated_by }}{% else %}—{% endif %}"
            readonly>
     </div>
 
@@ -67,6 +67,28 @@
         <input type="text" class="form-control" id="due_date" name="due_date"
                value="{{ todo.completed_at.strftime('%Y-%m-%d %H:%M') if todo.completed_at else '' }}"
                readonly>
+    </div>
+
+    <div class="card mt-2">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                <div>
+                    <h4 class="h5 mb-1">Реферат через spaCy</h4>
+                    <p class="text-muted small mb-0">Краткое изложение сути заметки на основе русского NLP-пайплайна.</p>
+                </div>
+                <button type="button" id="generateSummaryButton" class="btn btn-outline-primary">
+                    Сформировать реферат
+                </button>
+            </div>
+
+            <div id="summaryMessage" class="alert d-none mt-3 mb-0" role="alert"></div>
+            <textarea
+                id="spacySummary"
+                class="form-control mt-3"
+                rows="5"
+                readonly
+            >{{ todo.spacy_summary or '' }}</textarea>
+        </div>
     </div>
 
     <div class="form-group">
@@ -125,6 +147,40 @@
                 .catch(error => console.error('Ошибка:', error));
 
         this.reset();
+    });
+
+    const generateSummaryButton = document.getElementById('generateSummaryButton');
+    const summaryMessage = document.getElementById('summaryMessage');
+    const spacySummary = document.getElementById('spacySummary');
+
+    function showSummaryMessage(text, kind = 'success') {
+        summaryMessage.className = `alert alert-${kind} mt-3 mb-0`;
+        summaryMessage.textContent = text;
+        summaryMessage.classList.remove('d-none');
+    }
+
+    generateSummaryButton.addEventListener('click', async () => {
+        generateSummaryButton.disabled = true;
+        generateSummaryButton.textContent = 'Формируем...';
+
+        try {
+            const response = await fetchWithAuth('/todo/summarize/{{ todo.id }}/', {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Не удалось сформировать реферат');
+            }
+
+            spacySummary.value = data.spacy_summary || '';
+            showSummaryMessage('Реферат успешно сформирован и сохранён.', 'success');
+        } catch (error) {
+            showSummaryMessage(error.message || 'Не удалось сформировать реферат.', 'danger');
+        } finally {
+            generateSummaryButton.disabled = false;
+            generateSummaryButton.textContent = 'Сформировать реферат';
+        }
     });
 </script>
 {% endblock content %}
