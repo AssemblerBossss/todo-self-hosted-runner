@@ -136,6 +136,12 @@ class TodoRepository:
         """Удалить все todo пользователя"""
         await self._session.execute(delete(Todo).where(Todo.author_id == author_id))
 
+    async def clear_updated_by_for_user(self, user_id: int) -> None:
+        """Очистить ссылки на пользователя в поле updated_by."""
+        await self._session.execute(
+            update(Todo).where(Todo.updated_by == user_id).values(updated_by=None)
+        )
+
     async def is_image_used_by_other_todos(
         self, image_path: str, exclude_todo_id: int
     ) -> bool:

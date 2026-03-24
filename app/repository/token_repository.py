@@ -245,6 +245,32 @@ class TokenRepository:
             logger.error("Ошибка при удалении токена: {}".format(e))
             raise
 
+    async def delete_all_user_tokens(self, user_id: int) -> int:
+        """
+        Удалить все refresh токены пользователя из БД.
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            Количество удаленных токенов
+        """
+        try:
+            query = delete(RefreshToken).where(RefreshToken.user_id == user_id)
+            result: CursorResult = await self._session.execute(query)
+            await self._session.flush()
+
+            deleted_count = result.rowcount or 0
+            logger.info(
+                "Удалено %s refresh токенов пользователя %s",
+                deleted_count,
+                user_id,
+            )
+            return deleted_count
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при удалении токенов пользователя: %s", e)
+            raise
+
     async def count_active_user_tokens(self, user_id) -> int:
         """
         Подсчитать количество активных токенов пользователя

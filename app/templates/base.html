@@ -112,6 +112,15 @@
             display: block;
         }
 
+        .user-action-message {
+            display: none;
+            margin: 0;
+        }
+
+        .user-action-message.is-visible {
+            display: block;
+        }
+
         .user-menu-header {
             display: flex;
             gap: 14px;
@@ -163,7 +172,6 @@
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            width: 100%;
             border: 1px solid #e7ecf3;
             border-radius: 14px;
             background: #f8fafc;
@@ -187,6 +195,16 @@
 
         .user-switch-link.is-current:hover {
             color: #1f2937;
+        }
+
+        .user-switch-item {
+            display: flex;
+            align-items: stretch;
+            gap: 8px;
+        }
+
+        .user-switch-link {
+            width: 100%;
         }
 
         .user-switch-main {
@@ -218,6 +236,31 @@
             font-size: 11px;
             font-weight: 600;
             color: #4b5563;
+        }
+
+        .user-switch-side {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .user-delete-button {
+            border: 1px solid #f2c4c4;
+            background: #fff5f5;
+            color: #c53030;
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .user-delete-button:hover {
+            background: #ffe8e8;
+            border-color: #e8a7a7;
         }
 
         .user-menu-empty {
@@ -325,6 +368,8 @@
         </div>
     </div>
 
+    <div id="userActionMessage" class="alert alert-info user-action-message" role="status"></div>
+
     {% block content %}
 
     {% endblock content %}
@@ -411,6 +456,23 @@
         document.getElementById('userMenuPanelRole').textContent = formatRoleLabel(user.role);
     }
 
+    let userActionMessageTimer = null;
+
+    function showUserActionMessage(message, level = 'info') {
+        const messageElement = document.getElementById('userActionMessage');
+        messageElement.textContent = message;
+        messageElement.className = `alert alert-${level} user-action-message is-visible`;
+
+        if (userActionMessageTimer) {
+            clearTimeout(userActionMessageTimer);
+        }
+
+        userActionMessageTimer = setTimeout(() => {
+            messageElement.className = 'alert alert-info user-action-message';
+            messageElement.textContent = '';
+        }, 7000);
+    }
+
     function renderSwitchUsers(users, currentUser) {
         const list = document.getElementById('userSwitchList');
 
@@ -428,15 +490,63 @@
                 : `/auth/login?email=${encodeURIComponent(user.email)}`;
 
             return `
-                <a class="user-switch-link ${isCurrent ? 'is-current' : ''}" href="${href}" ${isCurrent ? 'aria-current="true"' : ''}>
-                    <span class="user-switch-main">
-                        <span class="user-switch-name">${displayName}</span>
-                        <span class="user-switch-email">${email}</span>
+                <div class="user-switch-item">
+                    <a class="user-switch-link ${isCurrent ? 'is-current' : ''}" href="${href}" ${isCurrent ? 'aria-current="true"' : ''}>
+                        <span class="user-switch-main">
+                            <span class="user-switch-name">${displayName}</span>
+                            <span class="user-switch-email">${email}</span>
+                        </span>
+                        <span class="user-switch-badge">${isCurrent ? 'Текущий' : 'Выбрать'}</span>
+                    </a>
+                    <span class="user-switch-side">
+                        <button
+                            type="button"
+                            class="user-delete-button"
+                            data-user-id="${user.id}"
+                            data-user-name="${displayName}"
+                            data-user-email="${email}"
+                        >
+                            Удалить
+                        </button>
                     </span>
-                    <span class="user-switch-badge">${isCurrent ? 'Текущий' : 'Выбрать'}</span>
-                </a>
+                </div>
             `;
         }).join('');
+    }
+
+    async function handleDeleteUser(userId, userName, userEmail) {
+        const response = await fetchWithAuth(`/auth/users/${userId}`, {
+            method: 'DELETE',
+        });
+
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = {};
+        }
+
+        if (!response.ok) {
+            const message = payload.detail || 'Не удалось удалить пользователя.';
+            showUserActionMessage(message, 'danger');
+            return;
+        }
+
+        const deletedTodosCount = payload.deleted_todos_count ?? 0;
+        const todoSuffix = deletedTodosCount === 1 ? 'задача' : 'задач';
+        showUserActionMessage(
+            `Пользователь ${payload.deleted_user_name || userName} (${payload.deleted_user_email || userEmail}) удалён. Удалено ${deletedTodosCount} ${todoSuffix}.`,
+            'success'
+        );
+
+        if (payload.deleted_current_user) {
+            setTimeout(() => {
+                window.location.href = '/auth/login';
+            }, 800);
+            return;
+        }
+
+        await loadUserMenu();
     }
 
     function openUserMenu() {
@@ -507,6 +617,25 @@
         if (event.key === 'Escape') {
             closeUserMenu();
         }
+    });
+
+    document.addEventListener('click', (event) => {
+        const deleteButton = event.target.closest('.user-delete-button');
+        if (!deleteButton) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const userId = deleteButton.dataset.userId;
+        const userName = deleteButton.dataset.userName;
+        const userEmail = deleteButton.dataset.userEmail;
+
+        closeShowModal(
+            () => handleDeleteUser(userId, userName, userEmail),
+            `Вы уверены, что хотите удалить пользователя "${userName}"?`
+        );
     });
 
     loadUserMenu();

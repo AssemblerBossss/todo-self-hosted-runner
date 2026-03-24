@@ -195,3 +195,23 @@ async def read_active_users(
         }
         for user in users
     ]
+
+
+@auth_router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+):
+    deleted_user = await auth_service.delete_user(
+        user_id=user_id,
+        current_user=current_user,
+        uow_session=uow_session,
+    )
+
+    response = JSONResponse(deleted_user)
+    if deleted_user["deleted_current_user"]:
+        response.delete_cookie("access_token", path="/")
+        response.delete_cookie("refresh_token", path="/")
+    return response

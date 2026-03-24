@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.repository import AuthRepository
 from app.repository.token_repository import TokenRepository
-from app.schemas import SUserRegister, SUserAuth, Token
+from app.schemas import SUserRegister, SUserAuth, SUserInfo, Token
 from app.core import UnitOfWork
 from app.models import User
 from app.exceptions import (
@@ -13,6 +13,8 @@ from app.exceptions import (
     InactiveUserException,
     IncorrectEmailOrPasswordException,
     InvalidCredentials,
+    ForbiddenException,
+    NotFoundException,
 )
 from app.utils import (
     verify_password,
@@ -160,3 +162,37 @@ class AuthService:
             token_type="Bearer",
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
+
+    async def delete_user(
+        self,
+        *,
+        user_id: int,
+        current_user: SUserInfo,
+        uow_session: UnitOfWork,
+    ) -> dict:
+        async with uow_session.start():
+            user = await uow_session.auth.find_one_or_none_by_id(user_id)
+            if not user:
+                raise NotFoundException("Пользователь не найден")
+
+            can_delete_user = current_user.role.value == "admin" or current_user.id == user_id
+            if not can_delete_user:
+                raise ForbiddenException("Удалять пользователей может только администратор или сам пользователь")
+
+            authored_todos = await uow_session.todo.get_todos_by_author_id(user_id)
+
+            for todo in authored_todos:
+                await uow_session.elastic.delete_todo(todo.id)
+
+            await uow_session.todo.clear_updated_by_for_user(user_id)
+            await uow_session.todo.delete_by_author_id(user_id)
+            await uow_session.token.delete_all_user_tokens(user_id)
+            await uow_session.auth.delete_by_id(user_id)
+
+            return {
+                "deleted_user_id": user.id,
+                "deleted_user_email": user.email,
+                "deleted_user_name": f"{user.first_name} {user.last_name}".strip(),
+                "deleted_todos_count": len(authored_todos),
+                "deleted_current_user": current_user.id == user_id,
+            }
