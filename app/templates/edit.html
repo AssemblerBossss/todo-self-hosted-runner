@@ -6,14 +6,24 @@
 
     <div class="form-floating">
         <input minlength="3" maxlength="200" type="text" class="form-control" id="title" name="title"
-               placeholder="Введите название задачи" required value="{{todo.title}}">
+               placeholder="Введите название задачи" required value="{{ todo.display_title }}"
+               data-original-value="{{ todo.title }}"
+               data-masked-value="{{ todo.display_title }}">
         <label for="title">Введите название задачи</label>
     </div>
     <div class="form-floating">
         <textarea class="form-control" maxlength="500" placeholder="Введите описание задачи" name="details" id="details"
-                  style="height: 100px">{{todo.details}}</textarea>
+                  style="height: 100px"
+                  data-original-value="{{ todo.details or '' }}"
+                  data-masked-value="{{ todo.display_details or '' }}">{{ todo.display_details or '' }}</textarea>
         <label for="details">Введите описание задачи</label>
     </div>
+
+    {% if todo.classification_level %}
+    <div class="alert alert-warning" role="alert">
+        Обнаружен гриф секретности: "{{ todo.classification_level }}". В форме показан замаскированный текст.
+    </div>
+    {% endif %}
 
     <div class="form-check form-switch">
         <label class="form-check-label" for="flexSwitchCheckChecked">Выполнено</label>
@@ -90,6 +100,17 @@
 <script>
     document.getElementById('todoForm').addEventListener('submit', function (e) {
         e.preventDefault();
+
+        const titleInput = document.getElementById('title');
+        const detailsInput = document.getElementById('details');
+
+        if (titleInput.dataset.maskedValue === titleInput.value) {
+            titleInput.value = titleInput.dataset.originalValue;
+        }
+
+        if (detailsInput.dataset.maskedValue === detailsInput.value) {
+            detailsInput.value = detailsInput.dataset.originalValue;
+        }
 
         const formData = new FormData(this);
         fetchWithAuth('/todo/edit/{{ todo.id }}/', {

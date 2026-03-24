@@ -8,7 +8,7 @@
                 <h2 class="h4 mb-0">🔍 Поиск тудушек</h2>
             </div>
             <div class="card-body">
-                <form action="/elastic/search/" method="post" class="mb-4">
+                <form action="/todo/search/" method="post" class="mb-4">
                     <div class="input-group">
                         <input type="text" 
                                name="query" 
@@ -38,8 +38,12 @@
                                                     {% for fragment in todo.highlight.title %}
                                                         {{ fragment|safe }}
                                                     {% endfor %}
+                                                {% elif todo.highlight and todo.highlight.masked_title %}
+                                                    {% for fragment in todo.highlight.masked_title %}
+                                                        {{ fragment|safe }}
+                                                    {% endfor %}
                                                 {% else %}
-                                                    {{ todo.title }}
+                                                    {{ todo.display_title or todo.title }}
                                                 {% endif %}
                                             </a>
                                         </h5>
@@ -58,8 +62,12 @@
                                             {% for fragment in todo.highlight.details %}
                                                 {{ fragment|safe }}
                                             {% endfor %}
+                                        {% elif todo.highlight and todo.highlight.masked_details %}
+                                            {% for fragment in todo.highlight.masked_details %}
+                                                {{ fragment|safe }}
+                                            {% endfor %}
                                         {% else %}
-                                            {{ todo.details }}
+                                            {{ todo.display_details or todo.details }}
                                         {% endif %}
                                     </p>
                                     
