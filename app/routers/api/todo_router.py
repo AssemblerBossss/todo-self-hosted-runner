@@ -6,7 +6,6 @@ import squarify
 import os
 import asyncio
 import shutil
-from urllib.parse import urlencode
 import matplotlib.pyplot as plt
 import seaborn as sb
 from datetime import datetime
@@ -215,48 +214,6 @@ async def get_todos(
             created_to=created_to,
             tag=tag,
         ),
-    )
-
-
-@todo_router.get("/search/", response_class=HTMLResponse)
-async def search_page(request: Request):
-    """Поиск встроен в страницу списка задач."""
-    return RedirectResponse("/todo/list/", status_code=303)
-
-
-@todo_router.post("/search/", response_class=HTMLResponse)
-async def search_todos(
-    request: Request,
-    query: str = Form(...),
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-):
-    return RedirectResponse(
-        url=f"/todo/list/?{urlencode({'query': query})}",
-        status_code=303,
-    )
-
-
-@todo_router.get("/search/tag/{tag}/", status_code=status.HTTP_200_OK)
-async def search_by_tag(
-    request: Request,
-    tag: str,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-):
-    return RedirectResponse(
-        url=f"/todo/list/?{urlencode({'search_tag': tag})}",
-        status_code=303,
-    )
-
-
-@todo_router.get("/search/date/", status_code=status.HTTP_200_OK)
-async def search_by_date(
-    request: Request,
-    date_from: datetime,
-    uow_session: UnitOfWork = Depends(get_async_uow_session),
-):
-    return RedirectResponse(
-        url=f"/todo/list/?{urlencode({'search_date_from': date_from.isoformat()})}",
-        status_code=303,
     )
 
 
