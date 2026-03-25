@@ -1,8 +1,8 @@
 import logging
 import os
-from typing import Any
 import shutil
 from datetime import datetime
+from typing import Annotated, Any
 from fastapi import (
     APIRouter,
     Request,
@@ -14,10 +14,8 @@ from fastapi import (
     Form,
 )
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, FileResponse
-from fastapi.responses import JSONResponse
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from starlette.responses import HTMLResponse
-from typing import Annotated
 
 from app.core import get_async_uow_session, UnitOfWork
 from app.dependencies import get_todo_service
@@ -37,17 +35,31 @@ templates = Jinja2Templates(directory="app/templates")
 
 logger = logging.getLogger(__name__)
 
-DAYS_RU = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+DAYS_RU = [
+    "Понедельник",
+    "Вторник",
+    "Среда",
+    "Четверг",
+    "Пятница",
+    "Суббота",
+    "Воскресенье",
+]
+VALID_INTERVALS = {"day", "week", "month"}
 
 
 def _group_todos_by_due_date(todos: list) -> list[dict]:
     """Группирует задачи по дате срока выполнения (due_at)."""
     from collections import defaultdict
+
     groups: dict = defaultdict(list)
     no_due = []
 
     for todo in todos:
-        due_at = getattr(todo, "due_at", None) if not isinstance(todo, dict) else todo.get("due_at")
+        due_at = (
+            getattr(todo, "due_at", None)
+            if not isinstance(todo, dict)
+            else todo.get("due_at")
+        )
         if due_at:
             date_key = due_at.date() if hasattr(due_at, "date") else due_at
             groups[date_key].append(todo)
@@ -107,7 +119,7 @@ def _todos_page_context(
     }
 
 
-@todo_router.get("/home/", status_code=status.HTTP_200_OK)
+@todo_router.get("/home/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
 async def get_home(request: Request):
     """Main page with todo list"""
     logger.info("In home")
@@ -115,20 +127,24 @@ async def get_home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@todo_router.get("/401", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/401", response_class=HTMLResponse, status_code=status.HTTP_401_UNAUTHORIZED
+)
 async def page_401(request: Request):
     """Main page with todo list"""
     return templates.TemplateResponse("401.html", {"request": request})
 
 
-@todo_router.get("/info-tasks/", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/info-tasks/", response_class=HTMLResponse, status_code=status.HTTP_200_OK
+)
 async def get_home(request: Request):
     """Main page with todo list"""
 
     return templates.TemplateResponse("info-tasks.html", {"request": request})
 
 
-@todo_router.get("/list/", status_code=status.HTTP_200_OK)
+@todo_router.get("/list/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
 async def get_todos(
     request: Request,
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
@@ -175,7 +191,9 @@ async def get_todos(
     )
 
 
-@todo_router.get("/search/top-words/", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/search/top-words/", response_class=JSONResponse, status_code=status.HTTP_200_OK
+)
 async def search_by_top_words(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
@@ -191,139 +209,84 @@ async def search_by_top_words(
         return JSONResponse({"words": []})
 
 
-VALID_INTERVALS = {"day", "week", "month"}
-
-
 @todo_router.get("/notes-per-day/", response_class=HTMLResponse)
 async def notes_per_day_chart(
     request: Request,
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
     days: int = 30,
     interval: str = "day",
 ):
     """Страница с графиком активности пользователей"""
     if interval not in VALID_INTERVALS:
         interval = "day"
-    try:
-        author_id = current_user.id if current_user.role == UserRole.VIEWER else None
-        data = await uow_session.elastic.get_notes_per_day_by_user(
-            days,
-            author_id=author_id,
-            interval=interval,
-        )
-        dates = [item["date"] for item in data]
-
-        user_ids = sorted(
-            {
-                user_bucket["author_id"]
-                for item in data
-                for user_bucket in item["users"]
-            }
-        )
-
-        async with uow_session.start():
-            users = await uow_session.auth.get_users_by_ids(user_ids)
-
-        users_by_id = {user.id: user for user in users}
-        series = []
-        for user_id in user_ids:
-            user = users_by_id.get(user_id)
-            label = user.email if user else f"Пользователь #{user_id}"
-            counts = []
-            for item in data:
-                users_count_map = {
-                    bucket["author_id"]: bucket["count"] for bucket in item["users"]
-                }
-                counts.append(users_count_map.get(user_id, 0))
-            series.append({"label": label, "data": counts})
-
-        return templates.TemplateResponse(
-            "notes_per_day.html",
-            {
-                "request": request,
-                "dates": dates,
-                "series": series,
-                "days": days,
-                "interval": interval,
-                "total": sum(item["total"] for item in data),
-                "users_count": len(series),
-            },
-        )
-    except Exception as e:
-        logger.error("Notes per day error: %s", e)
-        return templates.TemplateResponse(
-            "notes_per_day.html",
-            {
-                "request": request,
-                "dates": [],
-                "series": [],
-                "days": days,
-                "interval": interval,
-                "total": 0,
-                "users_count": 0,
-                "error": str(e),
-            },
-        )
+    result = await todo_service.get_notes_per_day(
+        uow_session=uow_session,
+        current_user=current_user,
+        days=days,
+        interval=interval,
+    )
+    return templates.TemplateResponse(
+        "notes_per_day.html",
+        {"request": request, **result, "days": days, "interval": interval},
+    )
 
 
-@todo_router.get("/api/notes-per-day/")
+@todo_router.get("/api/notes-per-day/", response_class=JSONResponse)
 async def notes_per_day_api(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
     days: int = 30,
     interval: str = "day",
 ):
     """API endpoint для получения данных графика в JSON."""
     if interval not in VALID_INTERVALS:
         interval = "day"
-    try:
-        author_id = current_user.id if current_user.role == UserRole.VIEWER else None
-        data = await uow_session.elastic.get_notes_per_day_by_user(
-            days,
-            author_id=author_id,
-            interval=interval,
-        )
-        return JSONResponse(
-            {
-                "data": data,
-                "total": sum(item["total"] for item in data),
-                "days": days,
-                "interval": interval,
-            }
-        )
-    except Exception as e:
-        logger.error("Notes per day API error: %s", e)
-        return JSONResponse({"error": str(e)}, status_code=500)
+    result = await todo_service.get_notes_per_day(
+        uow_session=uow_session,
+        current_user=current_user,
+        days=days,
+        interval=interval,
+    )
+    return JSONResponse(result)
 
 
-@todo_router.get("/tags/", response_class=HTMLResponse)
+@todo_router.get(
+    "/tags/",
+    response_class=HTMLResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
 async def tags_page(
     request: Request,
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
 ):
     """Страница управления тегами."""
     tags = await uow_session.elastic.get_all_tags()
-    return templates.TemplateResponse(
-        "tags.html", {"request": request, "tags": tags}
-    )
+    return templates.TemplateResponse("tags.html", {"request": request, "tags": tags})
 
 
-@todo_router.get("/api/tags/")
+@todo_router.get(
+    "/api/tags/",
+    response_class=JSONResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
 async def api_get_tags(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
 ):
     """JSON: список всех тегов."""
     tags = await uow_session.elastic.get_all_tags()
     return JSONResponse({"tags": tags})
 
 
-@todo_router.get("/api/tags/suggest/")
+@todo_router.get(
+    "/api/tags/suggest/",
+    response_class=JSONResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
 async def api_suggest_tags(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     q: str = "",
 ):
     """JSON: автодополнение тегов."""
@@ -334,26 +297,34 @@ async def api_suggest_tags(
     return JSONResponse({"suggestions": suggestions})
 
 
-@todo_router.post("/api/tags/")
+@todo_router.post(
+    "/api/tags/",
+    response_class=JSONResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
 async def api_create_tag(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     name: str = Form(...),
 ):
     """JSON: создать тег."""
     name = name.strip()
     if not name:
-        return JSONResponse({"error": "Имя тега не может быть пустым."}, status_code=400)
+        return JSONResponse(
+            {"error": "Имя тега не может быть пустым."}, status_code=400
+        )
     created = await uow_session.elastic.create_tag(name)
     if not created:
         return JSONResponse({"error": f"Тег «{name}» уже существует."}, status_code=409)
     return JSONResponse({"name": name, "created": True})
 
 
-@todo_router.delete("/api/tags/{tag_name}/")
+@todo_router.delete(
+    "/api/tags/{tag_name}/",
+    response_class=JSONResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
 async def api_delete_tag(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     tag_name: str,
 ):
     """JSON: удалить тег."""
@@ -399,7 +370,9 @@ async def add_todo(
     return {"status": "success", "details": "Todo added"}
 
 
-@todo_router.get("/edit/{todo_id}/", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/edit/{todo_id}/", response_class=HTMLResponse, status_code=status.HTTP_200_OK
+)
 async def get_todo(
     request: Request,
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
@@ -493,9 +466,8 @@ async def delete_todo(
     todo_id: int,
     limit: int = 10,
     skip: int = 0,
-) -> dict[str, Any]:
+) -> dict:
     """Удаление задачи только ее владельцем"""
-
     todo = await todo_service.delete(
         uow_session=uow_session, todo_id=todo_id, current_user=current_user
     )
@@ -514,13 +486,8 @@ async def delete_todos(
     todo_service: Annotated[TodoService, Depends(get_todo_service)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    limit: int = 10,
-    skip: int = 0,
-    start: int = 0,
-    end: int = 0,
 ):
     """Удаление всех задач текущего пользователя"""
-
     deleted_count = await todo_service.delete_all_user_todos(
         uow_session=uow_session,
         current_user=current_user,
@@ -536,7 +503,11 @@ async def delete_todos(
     }
 
 
-@todo_router.get("/visualize/", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/visualize/",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_303_SEE_OTHER,
+)
 async def visualize_todos(
     days: int = 30,
 ):
@@ -547,12 +518,12 @@ async def visualize_todos(
     )
 
 
-@todo_router.get("/generate/", status_code=status.HTTP_200_OK)
+@todo_router.get("/generate/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
 async def show_generate(request: Request):
     return templates.TemplateResponse("generate.html", {"request": request})
 
 
-@todo_router.post("/generate/", status_code=status.HTTP_200_OK)
+@todo_router.post("/generate/", status_code=status.HTTP_201_CREATED)
 async def generate_todos(
     user: Annotated[SUserInfo, Depends(get_current_active_user)],
     todo_service: Annotated[TodoService, Depends(get_todo_service)],
@@ -579,13 +550,17 @@ async def generate_todos(
         )
 
 
-@todo_router.get("/export/", status_code=status.HTTP_200_OK)
+@todo_router.get(
+    "/export/", response_class=HTMLResponse, status_code=status.HTTP_200_OK
+)
 async def visualize_todos(request: Request):
     """Page export and import todos from excel file"""
     return templates.TemplateResponse("export.html", {"request": request})
 
 
-@todo_router.post("/import")
+@todo_router.post(
+    "/import", response_class=RedirectResponse, status_code=status.HTTP_303_SEE_OTHER
+)
 async def import_file(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     file: UploadFile = File(...),
@@ -602,7 +577,7 @@ async def import_file(
     return RedirectResponse("/todo/home", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@todo_router.get("/import-log")
+@todo_router.get("/import-log",response_class=HTMLResponse)
 async def import_file(request: Request):
     files = os.listdir("./files/")
     return templates.TemplateResponse(
@@ -610,7 +585,7 @@ async def import_file(request: Request):
     )
 
 
-@todo_router.get("/import-log/{filename}")
+@todo_router.get("/import-log/{filename}", response_class=FileResponse)
 async def import_file(filename: str):
     file_location = os.path.join("./files/", filename)
     return FileResponse(
@@ -620,7 +595,7 @@ async def import_file(filename: str):
     )
 
 
-@todo_router.post("/export/")
+@todo_router.post("/export/", response_class=FileResponse)
 async def export_data(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
