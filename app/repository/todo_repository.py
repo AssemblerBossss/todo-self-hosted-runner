@@ -183,6 +183,56 @@ class TodoRepository:
             update(Todo).where(Todo.updated_by == user_id).values(updated_by=None)
         )
 
+    async def get_todos_by_details_hash(self, details_hash: str) -> Sequence["Todo"]:
+        """Возвращает все todo с заданным хешем описания."""
+        result = await self._session.execute(
+            select(Todo)
+            .options(
+                selectinload(Todo.author),
+                selectinload(Todo.updated_by_user),
+            )
+            .where(Todo.details_hash == details_hash)
+            .order_by(desc(Todo.id))
+        )
+        return result.scalars().all()
+
+    async def get_duplicate_groups(self, author_id: int | None = None) -> list[dict]:
+        """
+        Возвращает группы дублирующихся todo, сгруппированных по details_hash.
+        Каждая группа содержит хеш и список todo.
+        """
+        stmt = (
+            select(Todo.details_hash, func.count(Todo.id).label("cnt"))
+            .where(Todo.details_hash.isnot(None))
+            .group_by(Todo.details_hash)
+            .having(func.count(Todo.id) > 1)
+        )
+        if author_id is not None:
+            stmt = stmt.where(Todo.author_id == author_id)
+
+        result = await self._session.execute(stmt)
+        rows = result.all()
+
+        groups = []
+        for row in rows:
+            details_hash = row.details_hash
+            todos_stmt = (
+                select(Todo)
+                .options(
+                    selectinload(Todo.author),
+                    selectinload(Todo.updated_by_user),
+                )
+                .where(Todo.details_hash == details_hash)
+            )
+            if author_id is not None:
+                todos_stmt = todos_stmt.where(Todo.author_id == author_id)
+            todos_stmt = todos_stmt.order_by(Todo.id)
+            todos_result = await self._session.execute(todos_stmt)
+            todos = todos_result.scalars().all()
+            groups.append({"hash": details_hash, "todos": todos})
+
+        return groups
+
     async def is_image_used_by_other_todos(
         self, image_path: str, exclude_todo_id: int
     ) -> bool:

@@ -175,6 +175,30 @@ async def get_todos(
     )
 
 
+@todo_router.get("/duplicates/", response_class=HTMLResponse)
+async def get_duplicates(
+    request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+):
+    """Страница с группами дублирующихся заметок."""
+    groups = await todo_service.get_duplicates(
+        uow_session=uow_session,
+        current_user=current_user,
+    )
+    total_duplicates = sum(len(g["todos"]) - 1 for g in groups)
+    return templates.TemplateResponse(
+        "duplicates.html",
+        {
+            "request": request,
+            "groups": groups,
+            "total_groups": len(groups),
+            "total_duplicates": total_duplicates,
+        },
+    )
+
+
 @todo_router.get("/search/top-words/", status_code=status.HTTP_200_OK)
 async def search_by_top_words(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],

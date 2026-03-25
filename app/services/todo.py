@@ -22,6 +22,7 @@ from app.utils import (
     delete_image,
     generate_random_filename,
     hash_image,
+    hash_text,
     load_image,
 )
 
@@ -167,6 +168,7 @@ class TodoService:
                 due_at=due_at,
                 image_path=image_path,
                 image_hash=image_hash,
+                details_hash=hash_text(details),
                 completed=False,
                 author_id=author_id,
             )
@@ -415,6 +417,9 @@ class TodoService:
             if title != todo.title or details != todo.details:
                 todo_change.spacy_summary = None
 
+            if details and details != todo.details:
+                todo_change.details_hash = hash_text(details)
+
             await uow_session.todo.update(
                 todo_id=todo_id,
                 values=todo_change.model_dump(exclude={"id"}),
@@ -494,6 +499,16 @@ class TodoService:
             except Exception as e:
                 logger.error("Elastic delete failed: %s", e)
             return todo
+
+    async def get_duplicates(
+        self,
+        uow_session: UnitOfWork,
+        current_user: SUserInfo,
+    ) -> list[dict]:
+        """Возвращает группы дублирующихся заметок по хешу описания."""
+        author_id = current_user.id if self._can_view_only_own_todos(current_user) else None
+        async with uow_session.start():
+            return await uow_session.todo.get_duplicate_groups(author_id=author_id)
 
     async def generate_random_todos(
         self,

@@ -94,11 +94,17 @@ def import_todos(file_path) -> list[Todo]:
         todo.source = TodoSource.imported
         todo.image_path = image_path
         todo.image_hash = image_hash
+        todo.details_hash = hash_text(todo.details)
         todos.append(todo)
 
     workbook.close()
 
     return todos
+
+
+def hash_text(text: str) -> str:
+    """Возвращает MD5-хеш строки."""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
 async def hash_image(image: UploadFile):

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-3">
+        <div class="col-12 d-flex align-items-center justify-content-between">
+            <h2 class="h4 mb-0">Дубликаты заметок</h2>
+            <a href="/todo/list/" class="btn btn-outline-secondary btn-sm">← Список задач</a>
+        </div>
+    </div>
+
+    {% if total_groups == 0 %}
+        <div class="alert alert-success">
+            Дубликаты не найдены. Все заметки уникальны.
+        </div>
+    {% else %}
+        <div class="row mb-3 g-3">
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h3 class="h5 text-muted">Групп дубликатов</h3>
+                        <p class="h2 mb-0 text-warning">{{ total_groups }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h3 class="h5 text-muted">Избыточных заметок</h3>
+                        <p class="h2 mb-0 text-danger">{{ total_duplicates }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% for group in groups %}
+        <div class="card mb-4 border-warning">
+            <div class="card-header bg-warning bg-opacity-10 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="badge bg-warning text-dark me-2">{{ group.todos | length }} заметки</span>
+                    <small class="text-muted font-monospace">хеш: {{ group.hash }}</small>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 60px;">#</th>
+                                <th>Заголовок</th>
+                                <th>Описание</th>
+                                <th>Тег</th>
+                                <th>Автор</th>
+                                <th>Создана</th>
+                                <th>Файл</th>
+                                <th style="width: 80px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for todo in group.todos %}
+                            <tr {% if loop.index > 1 %}class="table-warning"{% endif %}>
+                                <td class="text-muted small">{{ todo.id }}</td>
+                                <td>
+                                    <a href="/todo/edit/{{ todo.id }}/" class="text-decoration-none fw-semibold">
+                                        {{ todo.title }}
+                                    </a>
+                                    {% if loop.index == 1 %}
+                                        <span class="badge bg-success ms-1" title="Первая заметка в группе">оригинал</span>
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark ms-1">дубликат</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ todo.details }}
+                                </td>
+                                <td>
+                                    {% if todo.tag %}
+                                        <span class="badge bg-secondary">{{ todo.tag }}</span>
+                                    {% else %}
+                                        <span class="text-muted small">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small">
+                                    {% if todo.author %}
+                                        {{ todo.author.first_name }} {{ todo.author.last_name }}
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted">
+                                    {{ todo.created_at.strftime('%d.%m.%Y') if todo.created_at else '—' }}
+                                </td>
+                                <td class="small">
+                                    {% if todo.image_path %}
+                                        <a href="/images/{{ todo.image_path }}" target="_blank" class="text-decoration-none">
+                                            <img src="/images/{{ todo.image_path }}" alt="img" style="width: 32px; height: 32px; object-fit: cover; border-radius: 4px;">
+                                        </a>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/todo/edit/{{ todo.id }}/" class="btn btn-outline-primary btn-sm">Открыть</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% endif %}
+</div>
+{% endblock content %}
