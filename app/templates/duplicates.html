@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h2 class="h2">Дубликаты заметок</h2>
+
+<div id="dupActionMessage" class="alert alert-success d-none mt-2" role="alert"></div>
+
+<div class="card mt-3 mb-3">
+    <div class="card-header">
+        <h3 class="h5 mb-0">Сводка</h3>
+    </div>
+    <div class="card-body">
+        {% if total_groups == 0 %}
+        <div class="alert alert-success mb-0">
+            Дубликаты не найдены — все заметки уникальны.
+        </div>
+        {% else %}
+        <div class="d-flex flex-wrap gap-4">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark fs-6 px-3 py-2">{{ total_groups }}</span>
+                <span class="text-muted">групп дубликатов</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-danger fs-6 px-3 py-2">{{ total_duplicates }}</span>
+                <span class="text-muted">избыточных заметок</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% for group in groups %}
+<div class="mt-4" id="group-{{ loop.index }}">
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge rounded-pill px-3 py-2 fs-6" style="background: #fd7e14; color: #fff;">
+            {{ group.todos | length }} заметки
+        </span>
+    </div>
+
+    <ul class="list-group" id="group-list-{{ loop.index }}">
+        {% for todo in group.todos %}
+        <li class="list-group-item" id="dup-item-{{ todo.id }}">
+            <div class="d-flex align-items-start gap-3 flex-wrap flex-lg-nowrap">
+
+                {% if todo.image_path %}
+                <img src="{{ url_for('images', path=todo.image_path) }}" alt="todo"
+                     style="width: 50px; height: 50px; object-fit: cover; flex-shrink: 0;">
+                {% endif %}
+
+                <div class="d-flex flex-column gap-2 flex-grow-1" style="min-width: 0;">
+                    <div class="d-flex align-items-start gap-2 flex-wrap">
+                        <span class="mb-0 d-block"
+                              style="white-space: normal; overflow-wrap: anywhere; word-break: break-word;">
+                            {{ todo.title }}
+                        </span>
+                        {% if loop.index == 1 %}
+                        <span class="badge bg-success">оригинал</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">дубликат</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="text-muted small"
+                         style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px;">
+                        {{ todo.details if todo.details else '—' }}
+                    </div>
+
+                    <div class="d-flex gap-3 align-items-center flex-wrap">
+                        {% if todo.tag %}
+                        <span class="badge bg-secondary">{{ todo.tag }}</span>
+                        {% endif %}
+                        <div style="color: dodgerblue" class="small">{{ todo.source }}</div>
+                        <span class="text-muted small">
+                            {{ todo.author.first_name }} {{ todo.author.last_name }}
+                            · {{ todo.created_at.strftime('%d.%m.%Y') if todo.created_at else '—' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 ms-lg-auto flex-shrink-0">
+                    <div class="btn-group">
+                        <a class="btn btn-success"
+                           href="/todo/edit/{{ todo.id }}/"
+                           data-can-edit="{% if todo.author_id == current_user_id %}true{% else %}false{% endif %}">
+                            Редактировать
+                        </a>
+                        <button class="btn btn-danger dup-delete-btn"
+                                data-todo-id="{{ todo.id }}"
+                                data-todo-title="{{ todo.title }}"
+                                data-can-delete="{% if current_user_role == 'admin' or todo.author_id == current_user_id %}true{% else %}false{% endif %}">
+                            Удалить
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endfor %}
+
+<script>
+    const dupActionMessage = document.getElementById('dupActionMessage');
+    let dupMessageTimer = null;
+
+    function showDupMessage(text, kind = 'success') {
+        if (dupMessageTimer) clearTimeout(dupMessageTimer);
+        dupActionMessage.className = `alert alert-${kind} mt-2`;
+        dupActionMessage.textContent = text;
+        dupActionMessage.classList.remove('d-none');
+        dupMessageTimer = setTimeout(() => {
+            dupActionMessage.classList.add('d-none');
+            dupActionMessage.textContent = '';
+            dupMessageTimer = null;
+        }, 7000);
+    }
+
+    document.querySelectorAll('.dup-delete-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const todoId = this.dataset.todoId;
+            const todoTitle = this.dataset.todoTitle;
+            const canDelete = this.dataset.canDelete === 'true';
+
+            if (!canDelete) {
+                showDupMessage('Вы не можете удалить чужую задачу.', 'warning');
+                return;
+            }
+
+            const action = () => {
+                fetchWithAuth(`/todo/delete/${todoId}/`, { method: 'DELETE' })
+                    .then(async res => {
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.detail || 'Не удалось удалить задачу.');
+                        return data;
+                    })
+                    .then(data => {
+                        const item = document.getElementById(`dup-item-${todoId}`);
+                        if (item) item.remove();
+                        showDupMessage(`Заметка "${data.deleted_todo_title}" удалена.`);
+                    })
+                    .catch(err => showDupMessage(err.message || 'Ошибка удаления.', 'danger'));
+            };
+
+            closeShowModal(action, `Вы уверены, что хотите удалить "${todoTitle}"?`);
+        });
+    });
+
+    document.querySelectorAll('a[data-can-edit]').forEach(link => {
+        link.addEventListener('click', function (e) {
+            if (this.dataset.canEdit !== 'true') {
+                e.preventDefault();
+                showDupMessage('Вы можете редактировать только свои задачи.', 'warning');
+            }
+        });
+    });
+</script>
+
+{% endblock content %}

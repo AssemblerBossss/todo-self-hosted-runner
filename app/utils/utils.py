@@ -101,6 +101,11 @@ def import_todos(file_path) -> list[Todo]:
     return todos
 
 
+def hash_text(text: str) -> str:
+    """Возвращает MD5-хеш строки текста."""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
 async def hash_image(image: UploadFile):
     try:
         img_bytes = await image.read()

@@ -119,6 +119,61 @@ def _todos_page_context(
     }
 
 
+@todo_router.get("/clusters/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
+async def get_clusters(
+    request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+    n_clusters: int = 3,
+):
+    """Страница кластеризации заметок."""
+    n_clusters = max(2, min(n_clusters, 10))
+    clusters = await todo_service.get_clusters(
+        uow_session=uow_session,
+        current_user=current_user,
+        n_clusters=n_clusters,
+    )
+    total_todos = sum(len(c["todos"]) for c in clusters)
+    return templates.TemplateResponse(
+        "clusters.html",
+        {
+            "request": request,
+            "clusters": clusters,
+            "n_clusters": n_clusters,
+            "total_todos": total_todos,
+            "current_user_id": int(request.state.user["user_id"]),
+            "current_user_role": request.state.user["role"],
+        },
+    )
+
+
+@todo_router.get("/duplicates/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
+async def get_duplicates(
+    request: Request,
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+):
+    """Страница с группами дублирующихся заметок."""
+    groups = await todo_service.get_duplicates(
+        uow_session=uow_session,
+        current_user=current_user,
+    )
+    total_duplicates = sum(len(g["todos"]) - 1 for g in groups)
+    return templates.TemplateResponse(
+        "duplicates.html",
+        {
+            "request": request,
+            "groups": groups,
+            "total_groups": len(groups),
+            "total_duplicates": total_duplicates,
+            "current_user_id": int(request.state.user["user_id"]),
+            "current_user_role": request.state.user["role"],
+        },
+    )
+
+
 @todo_router.get("/home/", response_class=HTMLResponse, status_code=status.HTTP_200_OK)
 async def get_home(request: Request):
     """Main page with todo list"""

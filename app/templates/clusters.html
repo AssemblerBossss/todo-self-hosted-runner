@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h2 class="h2">Кластеризация заметок</h2>
+
+<div class="card mt-3 mb-3">
+    <div class="card-header">
+        <h3 class="h5 mb-0">Параметры</h3>
+    </div>
+    <div class="card-body">
+        <form action="/todo/clusters/" method="get" class="d-flex align-items-end gap-3 flex-wrap">
+            <div>
+                <label class="form-label mb-1">Количество кластеров</label>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="range" class="form-range" name="n_clusters"
+                           min="2" max="10" value="{{ n_clusters }}" id="clusterRange"
+                           oninput="document.getElementById('clusterValue').textContent = this.value"
+                           style="width: 180px;">
+                    <span class="badge bg-primary fs-6 px-3" id="clusterValue">{{ n_clusters }}</span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Кластеризовать</button>
+        </form>
+    </div>
+</div>
+
+{% if total_todos == 0 %}
+<div class="alert alert-info mt-3">Нет заметок для кластеризации.</div>
+{% else %}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-4">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary fs-6 px-3 py-2">{{ clusters | length }}</span>
+                <span class="text-muted">кластеров</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-secondary fs-6 px-3 py-2">{{ total_todos }}</span>
+                <span class="text-muted">заметок распределено</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% set cluster_colors = ['#0d6efd', '#198754', '#fd7e14', '#dc3545', '#6f42c1', '#0dcaf0', '#ffc107', '#20c997', '#d63384', '#6c757d'] %}
+
+{% for cluster in clusters %}
+<div class="mt-4">
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge rounded-pill px-3 py-2 fs-6"
+              style="background: {{ cluster_colors[loop.index0 % cluster_colors|length] }}; color: #fff;">
+            Кластер {{ cluster.label }}
+        </span>
+        <span class="text-muted small">{{ cluster.todos | length }}
+            {{ "заметка" if cluster.todos|length == 1 else "заметок" }}
+        </span>
+    </div>
+
+    <ul class="list-group">
+        {% for todo in cluster.todos %}
+        <li class="list-group-item">
+            <div class="d-flex align-items-start gap-3 flex-wrap flex-lg-nowrap">
+
+                {% if todo.image_path %}
+                <img src="{{ url_for('images', path=todo.image_path) }}" alt="todo"
+                     style="width: 50px; height: 50px; object-fit: cover; flex-shrink: 0;">
+                {% endif %}
+
+                <div class="d-flex flex-column gap-2 flex-grow-1" style="min-width: 0;">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="flex-grow-1" style="min-width: 0;">
+                            {% if todo.completed %}
+                            <strike class="mb-0 d-block"
+                                    style="white-space: normal; overflow-wrap: anywhere; word-break: break-word;">
+                                {{ todo.title }}
+                            </strike>
+                            {% else %}
+                            <span class="mb-0 d-block"
+                                  style="white-space: normal; overflow-wrap: anywhere; word-break: break-word;">
+                                {{ todo.title }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <span class="text-muted small text-nowrap ms-auto flex-shrink-0">
+                            {{ todo.author.email if todo.author else '—' }}
+                        </span>
+                    </div>
+
+                    <div class="text-muted small"
+                         style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px;">
+                        {{ todo.details if todo.details else '—' }}
+                    </div>
+
+                    <div class="d-flex gap-3 align-items-center flex-wrap">
+                        {% if todo.tag %}
+                        <span class="badge bg-secondary">{{ todo.tag }}</span>
+                        {% endif %}
+                        <div style="color: dodgerblue" class="small">{{ todo.source }}</div>
+                        <span class="text-muted small">
+                            {{ todo.created_at.strftime('%d.%m.%Y') if todo.created_at else '—' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center ms-lg-auto flex-shrink-0">
+                    <a class="btn btn-success"
+                       href="/todo/edit/{{ todo.id }}/"
+                       data-can-edit="{% if todo.author_id == current_user_id %}true{% else %}false{% endif %}">
+                        Редактировать
+                    </a>
+                </div>
+
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endfor %}
+
+{% endif %}
+
+<script>
+    document.querySelectorAll('a[data-can-edit]').forEach(link => {
+        link.addEventListener('click', function (e) {
+            if (this.dataset.canEdit !== 'true') {
+                e.preventDefault();
+                const msg = document.createElement('div');
+                msg.className = 'alert alert-warning mt-2';
+                msg.textContent = 'Вы можете редактировать только свои задачи.';
+                document.querySelector('h2').insertAdjacentElement('afterend', msg);
+                setTimeout(() => msg.remove(), 4000);
+            }
+        });
+    });
+</script>
+
+{% endblock content %}
