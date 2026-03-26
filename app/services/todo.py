@@ -16,11 +16,13 @@ from app.schemas import SUserInfo, Tags, Todo as TodoSchema, TodoSource, UserRol
 from app.services.search_index import build_search_document
 from app.services.search_index import enrich_todo_display_list
 from app.services.search_index import merge_search_hits_with_todos
+from app.services.clustering import cluster_todos
 from app.services.summary import build_spacy_summary
 from app.utils import (
     delete_image,
     generate_random_filename,
     hash_image,
+    hash_text,
     load_image,
 )
 
@@ -171,7 +173,7 @@ class TodoService:
         uow_session: UnitOfWork,
         title: str,
         details: str,
-        tag: Tags,
+        tag: str | None,
         source: TodoSource,
         image: UploadFile | None,
         author_id: int,
@@ -205,6 +207,7 @@ class TodoService:
                 due_at=due_at,
                 image_path=image_path,
                 image_hash=image_hash,
+                details_hash=hash_text(details),
                 completed=False,
                 author_id=author_id,
             )
@@ -349,7 +352,7 @@ class TodoService:
         title: str | None,
         details: str | None,
         completed: bool,
-        tag: Tags | None,
+        tag: str | None,
         created_at: datetime | None,
         image_path: str | None,
         existing_image: str | None,
@@ -375,6 +378,7 @@ class TodoService:
                 created_at=created_at,
                 image_path=resolved_image_path,
                 image_hash=resolved_image_hash,
+                details_hash=hash_text(details) if details else todo.details_hash,
                 spacy_summary=todo.spacy_summary,
             )
 
@@ -420,6 +424,32 @@ class TodoService:
                 user_id=user.id,
             )
             return summary
+
+    async def get_clusters(
+        self,
+        uow_session: UnitOfWork,
+        current_user: SUserInfo,
+        n_clusters: int = 3,
+    ) -> list[dict]:
+        """Кластеризует заметки по содержимому через TF-IDF + KMeans."""
+        author_id = self._resolve_author_id(current_user)
+        async with uow_session.start():
+            todos = await uow_session.todo.get_many(
+                limit=1000,
+                skip=0,
+                author_id=author_id,
+            )
+        return cluster_todos(todos, n_clusters=n_clusters)
+
+    async def get_duplicates(
+        self,
+        uow_session: UnitOfWork,
+        current_user: SUserInfo,
+    ) -> list[dict]:
+        """Возвращает группы дублирующихся заметок по хешу описания."""
+        author_id = self._resolve_author_id(current_user)
+        async with uow_session.start():
+            return await uow_session.todo.get_duplicate_groups(author_id=author_id)
 
     async def get_todo_for_edit(
         self,

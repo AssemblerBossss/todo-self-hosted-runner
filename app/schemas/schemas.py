@@ -22,13 +22,14 @@ class Todo(BaseModel):
     title: str = Field(min_length=3, max_length=200, default="Задача")
     details: str = Field(max_length=500, default="Описание задачи")
     completed: bool = Field(default=False)
-    tag: Tags = Field(default=Tags.plans)
+    tag: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
     due_at: datetime | None = Field(default=None)
     source: TodoSource = Field(default=TodoSource.created)
     image_path: str | None = Field(default=None)
     image_hash: str | None = Field(default=None)
+    details_hash: str | None = Field(default=None)
     spacy_summary: str | None = Field(default=None)
 
     model_config = {
