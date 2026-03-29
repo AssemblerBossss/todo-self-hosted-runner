@@ -22,41 +22,61 @@ from app.models import Todo
 from app.schemas import TodoSource
 
 
-def export_todos(todos: list[Todo]):
+def export_todos(todos: list[Todo], file_path: str = "data/todos.xlsx"):
     wb = Workbook()
     wb.remove(wb.active)
     ws = wb.create_sheet("todos", 0)
 
-    headers = ["title", "details", "completed", "tag", "created_at", "completed_at", "source", "image_path",
-               "image_hash"]
+    headers = [
+        "title",
+        "details",
+        "completed",
+        "tag",
+        "created_at",
+        "completed_at",
+        "due_at",
+        "updated_at",
+        "updated_by",
+        "source",
+        "spacy_summary",
+        "image_path",
+        "image_hash",
+    ]
     for index, header in enumerate(headers):
         ws.column_dimensions[f"{chr(index + 65)}"].width = len(header) + 5
     ws.append(headers)
     for cell in ws[1]:
-        cell.alignment = Alignment(horizontal='center')
+        cell.alignment = Alignment(horizontal="center")
+
+    def fmt(dt):
+        return dt.strftime("%Y-%m-%d %H:%M:%S") if dt is not None else ""
 
     for todo in todos:
-        ws.append([
-            todo.title,
-            todo.details,
-            "Выполнено" if todo.completed else "Не выполнено",
-            todo.tag,
-            todo.created_at.strftime("%Y-%m-%d %H:%M:%S") if todo.created_at is not None else "",
-            todo.completed_at.strftime("%Y-%m-%d %H:%M:%S") if todo.completed_at is not None else "",
-            todo.source,
-            todo.image_path,
-            todo.image_hash])
+        ws.append(
+            [
+                todo.title,
+                todo.details,
+                "Выполнено" if todo.completed else "Не выполнено",
+                todo.tag,
+                fmt(todo.created_at),
+                fmt(todo.completed_at),
+                fmt(todo.due_at),
+                fmt(todo.updated_at),
+                todo.updated_by,
+                todo.source,
+                todo.spacy_summary,
+                todo.image_path,
+                todo.image_hash,
+            ]
+        )
 
-    column_index = None
-    for cell in ws[1]:
-        if cell.value == 'image_hash':
-            column_index = cell.column_letter
-            break
+    # Скрываем служебные колонки
+    for hidden_col in ("image_hash",):
+        for cell in ws[1]:
+            if cell.value == hidden_col:
+                ws.column_dimensions[cell.column_letter].hidden = True
 
-    if column_index:
-        ws.column_dimensions[column_index].hidden = True
-
-    wb.save("data/todos.xlsx")
+    wb.save(file_path)
 
 
 def import_todos(file_path) -> list[Todo]:
@@ -67,7 +87,7 @@ def import_todos(file_path) -> list[Todo]:
     column_index = None
 
     for cell in sheet[1]:
-        if cell.value == 'image_hash':
+        if cell.value == "image_hash":
             column_index = cell.column_letter
             break
 
@@ -75,7 +95,17 @@ def import_todos(file_path) -> list[Todo]:
         sheet.column_dimensions[column_index].hidden = False
 
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        title, details, completed, tag, created_at, completed_at, source, image_path, image_hash = row
+        (
+            title,
+            details,
+            completed,
+            tag,
+            created_at,
+            completed_at,
+            source,
+            image_path,
+            image_hash,
+        ) = row
 
         if not completed and completed_at is not None:
             print(f"Ошибка: Задача с ID {id} не завершена, но дата выполнения указана.")
@@ -117,20 +147,23 @@ async def hash_image(image: UploadFile):
 
 async def load_image(image: UploadFile, random_filename: str) -> None:
     """Load image"""
-    file_location = os.path.join('./images/', random_filename)
+    file_location = os.path.join("./images/", random_filename)
     try:
         with open(file_location, "wb") as file:
             file.write(await image.read())
     except Exception as e:
 
         logger.error(f"Error saving image {random_filename}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Image saving failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Image saving failed",
+        )
 
 
 def generate_random_filename(length: int = 10) -> str:
     """Generate a random filename of specified length."""
     characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
+    return "".join(random.choice(characters) for _ in range(length))
 
 
 async def delete_image(image_path: str) -> None:
@@ -156,11 +189,11 @@ def create_dirs():
 
 class OAuth2PasswordBearerWithCookie(OAuth2):
     def __init__(
-            self,
-            tokenUrl: str,
-            scheme_name: Optional[str] = None,
-            scopes: Optional[Dict[str, str]] = None,
-            auto_error: bool = True,
+        self,
+        tokenUrl: str,
+        scheme_name: Optional[str] = None,
+        scopes: Optional[Dict[str, str]] = None,
+        auto_error: bool = True,
     ):
         if not scopes:
             scopes = {}
@@ -168,7 +201,9 @@ class OAuth2PasswordBearerWithCookie(OAuth2):
         super().__init__(flows=flows, scheme_name=scheme_name, auto_error=auto_error)
 
     async def __call__(self, request: Request) -> Optional[str]:
-        authorization: str = request.cookies.get("access_token")  # changed to accept access token from httpOnly Cookie
+        authorization: str = request.cookies.get(
+            "access_token"
+        )  # changed to accept access token from httpOnly Cookie
 
         scheme, param = get_authorization_scheme_param(authorization)
         if not authorization or scheme.lower() != "bearer":

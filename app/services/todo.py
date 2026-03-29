@@ -24,6 +24,7 @@ from app.utils import (
     hash_image,
     hash_text,
     load_image,
+    export_todos,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,12 +101,17 @@ class TodoService:
         if image and image.filename:
             image_hash = await hash_image(image)
             duplicate = await uow_session.todo.is_duplicate_image(image_hash)
-            if await uow_session.todo.get_todos_by_image_path(todo.image_path, todo.id) is None:
+            if (
+                await uow_session.todo.get_todos_by_image_path(todo.image_path, todo.id)
+                is None
+            ):
                 await delete_image(todo.image_path)
             if duplicate:
                 logger.info("Duplicate image detected.")
                 return duplicate.image_path, image_hash
-            random_filename = generate_random_filename() + "." + image.filename.split(".")[-1]
+            random_filename = (
+                generate_random_filename() + "." + image.filename.split(".")[-1]
+            )
             await load_image(image, random_filename)
             return random_filename, image_hash
 
@@ -117,7 +123,10 @@ class TodoService:
                 if data is None:
                     raise NotFoundException(f"Image '{existing_image}' not found")
                 image_hash = data.image_hash
-            if await uow_session.todo.get_todos_by_image_path(todo.image_path, todo.id) is None:
+            if (
+                await uow_session.todo.get_todos_by_image_path(todo.image_path, todo.id)
+                is None
+            ):
                 await delete_image(todo.image_path)
             return existing_image, image_hash
 
@@ -612,21 +621,31 @@ class TodoService:
     async def get_notes_per_day(
         self, uow_session: UnitOfWork, current_user: SUserInfo, days: int, interval: str
     ) -> dict:
+        """Возвращает данные для графика активности пользователей по дням."""
         author_id = self._resolve_author_id(current_user)
+
+        # Получаем данные из Elasticsearch
         data = await uow_session.elastic.get_notes_per_day_by_user(
             days,
             author_id=author_id,
             interval=interval,
         )
+
+        if not data:
+            return {"dates": [], "series": [], "total": 0, "users_count": 0}
+
+        # Извлекаем даты и ID пользователей
         dates = [item["date"] for item in data]
         user_ids = sorted(
             {bucket["author_id"] for item in data for bucket in item["users"]}
         )
 
+        # Загружаем информацию о пользователях
         async with uow_session.start():
             users = await uow_session.auth.get_users_by_ids(user_ids)
-
         users_by_id = {user.id: user for user in users}
+
+        # Формируем данные для серий графика
         series = []
         for user_id in user_ids:
             user = users_by_id.get(user_id)
@@ -643,3 +662,21 @@ class TodoService:
             "total": sum(item["total"] for item in data),
             "users_count": len(series),
         }
+
+
+    async def export(self, uow_session: UnitOfWork, current_user: SUserInfo) -> str:
+        """Экспортирует задачи пользователя в Excel-файл."""
+        author_id = self._resolve_author_id(current_user)
+        async with uow_session.start():
+            if author_id:
+                todos: Sequence[TodoORM] = (
+                    await uow_session.todo.get_todos_by_author_id(author_id=author_id)
+                )
+            else:
+                todos: Sequence[TodoORM] = await uow_session.todo.get_all()
+
+        filename = datetime.now(UTC).strftime("%Y_%m_%d_%H_%M_%S") + ".xlsx"
+        file_path = f"data/{filename}"
+
+        export_todos(todos, file_path)
+        return file_path

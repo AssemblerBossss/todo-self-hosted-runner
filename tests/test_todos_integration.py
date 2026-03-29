@@ -1,5 +1,6 @@
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
+from app.main import app
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,17 +86,18 @@ async def test_create_todo_success(user_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_create_todo_without_auth(ac: AsyncClient):
-    response = await ac.post(
-        "/todo/add/",
-        data={
-            "title": "Задача без авторизации",
-            "details": "desc",
-            "tag": "Планы",
-            "source": "Созданная",
-        },
-        follow_redirects=False,
-    )
+async def test_create_todo_without_auth():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as fresh_client:
+        response = await fresh_client.post(
+            "/todo/add/",
+            data={
+                "title": "Задача без авторизации",
+                "details": "desc",
+                "tag": "Планы",
+                "source": "Созданная",
+            },
+            follow_redirects=False,
+        )
     # Без куки — редирект на логин или 401
     assert response.status_code in (302, 303, 401)
 
@@ -151,6 +153,7 @@ async def test_edit_todo_success(user_client: AsyncClient):
             "details": "Новое описание",
             "completed": "false",
             "tag": "Планы",
+            "created_at": "2026-01-01T00:00:00",
         },
     )
     assert response.status_code == 200
@@ -166,6 +169,7 @@ async def test_edit_todo_mark_completed(user_client: AsyncClient):
             "details": "desc",
             "completed": "true",
             "tag": "Планы",
+            "created_at": "2026-01-01T00:00:00",
         },
     )
     assert response.status_code == 200

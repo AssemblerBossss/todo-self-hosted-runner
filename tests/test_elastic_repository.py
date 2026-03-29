@@ -96,7 +96,7 @@ def test_detect_classification_sekretno():
 
 
 def test_detect_classification_none_when_no_match():
-    assert detect_classification("обычная задача")
+    assert detect_classification("обычная задача") is None
 
 
 def test_detect_classification_none_for_empty():
