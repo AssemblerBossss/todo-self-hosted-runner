@@ -15,9 +15,10 @@ async def test_login_page_loads(ac: AsyncClient):
 async def test_register_user(ac: AsyncClient):
     response = await ac.post(
         "/auth/register",
-        data={
+        json={
             "email": "testuser@example.com",
             "password": "testpassword",
+            "confirm_password": "testpassword",
             "first_name": "Test",
             "last_name": "User",
             "role": "editor",
