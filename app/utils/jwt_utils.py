@@ -97,33 +97,3 @@ def extract_bearer_token(authorization_header: str | None) -> str | None:
         logger.error("Auth Middleware: authorization_header is not Bearer")
         return None
     return parts[1]
-
-
-#
-#
-# async def get_admin_user(
-#     current_user: User = Depends(get_current_user),
-# ) -> TokenData:
-#     if current_user.role != UserRole.ADMIN:
-#         raise HTTPException(status_code=403, detail="Admin access required")
-#     return TokenData(
-#         id=current_user.id, email=current_user.email, role=current_user.role
-#     )
-#
-#
-# async def get_editor_user(
-#     current_user: User = Depends(get_current_user),
-# ) -> TokenData:
-#     if current_user.role not in [UserRole.ADMIN, UserRole.EDITOR]:
-#         raise HTTPException(status_code=403, detail="Editor access required")
-#     return TokenData(
-#         id=current_user.id, email=current_user.email, role=current_user.role
-#     )
-#
-#
-# async def get_viewer_user(
-#     current_user: User = Depends(get_current_user),
-# ) -> TokenData:
-#     return TokenData(
-#         id=current_user.id, email=current_user.email, role=current_user.role
-#     )

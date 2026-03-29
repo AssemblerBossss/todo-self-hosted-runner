@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 from fastapi import (
     APIRouter,
@@ -25,7 +26,6 @@ from app.services.search_index import enrich_todo_display
 from app.services.todo import TodoService
 from app.utils import (
     import_todos,
-    export_todos,
 )
 
 todo_router = APIRouter(prefix="/todo", tags=["Todo"])
@@ -659,16 +659,15 @@ async def import_file(filename: str):
 async def export_data(
     uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
     current_user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
 ):
-    if current_user.role == UserRole.VIEWER:
-        todos = await uow_session.todo.get_todos_by_author_id(current_user.id)
-    else:
-        todos = await uow_session.todo.get_all()
-
-    export_todos(todos)
+    file_path = await todo_service.export(
+        uow_session=uow_session,
+        current_user=current_user,
+    )
 
     return FileResponse(
-        "data/todos.xlsx",
-        filename=datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".xlsx",
+        file_path,
+        filename=Path(file_path).name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
