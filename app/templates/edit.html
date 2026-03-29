@@ -11,15 +11,15 @@
                data-masked-value="{{ todo.display_title }}">
         <label for="title">Введите название задачи</label>
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-primary btn-sm" id="generateTitleBtn">Подобрать заголовок через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelGenerateTitleBtn">Отмена</button>
     </div>
-    <div class="form-floating">
-        <textarea class="form-control" maxlength="500" placeholder="Введите описание задачи" name="details" id="details"
+    <div>
+        <textarea class="form-control" maxlength="1000" placeholder="Введите описание задачи" name="details" id="details"
                   style="height: 100px"
                   data-original-value="{{ todo.details or '' }}"
                   data-masked-value="{{ todo.display_details or '' }}">{{ todo.display_details or '' }}</textarea>
-        <label for="details">Введите описание задачи</label>
     </div>
 
     {% if todo.classification_level %}
@@ -48,8 +48,9 @@
         <div class="form-text text-muted">Тег не задан</div>
         {% endif %}
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="suggestTagBtn">Предложить тег через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelSuggestTagBtn">Отмена</button>
     </div>
 
     <div id="llmActionMessage" class="alert d-none mb-0" role="alert"></div>
@@ -92,8 +93,14 @@
                     <button type="button" id="generateSummaryButton" class="btn btn-outline-primary">
                         Сформировать spaCy-реферат
                     </button>
+                    <button type="button" id="cancelGenerateSummaryButton" class="btn btn-danger d-none">
+                        Отмена
+                    </button>
                     <button type="button" id="generateLlmSummaryButton" class="btn btn-outline-secondary">
                         Сформировать OpenRouter-реферат
+                    </button>
+                    <button type="button" id="cancelGenerateLlmSummaryButton" class="btn btn-danger d-none">
+                        Отмена
                     </button>
                 </div>
             </div>
@@ -186,7 +193,10 @@
     const titleInput = document.getElementById('title');
     const detailsInput = document.getElementById('details');
 
-    document.getElementById('todoForm').addEventListener('submit', function (e) {
+    const todoForm = document.getElementById('todoForm');
+    const saveButton = todoForm.querySelector('button[type="submit"]');
+
+    todoForm.addEventListener('submit', async function (e) {
         e.preventDefault();
 
         if (titleInput.dataset.maskedValue === titleInput.value) {
@@ -198,48 +208,103 @@
         }
 
         const formData = new FormData(this);
-        fetchWithAuth('/todo/edit/{{ todo.id }}/', {
-            method: 'PUT',
-            body: formData
-        })
-            .then(res => res.json())
-            .then(data => {
-                console.log('Успешно:', data);
-                window.location.href = '/todo/list/?limit={{ limit }}&skip={{ skip }}';
-            })
-            .catch(error => console.error('Ошибка:', error));
+        const initialSaveButtonText = saveButton.textContent;
+        saveButton.disabled = true;
+        saveButton.textContent = 'Сохраняем...';
 
-        this.reset();
+        try {
+            const response = await fetchWithAuth('/todo/edit/{{ todo.id }}/', {
+                method: 'PUT',
+                body: formData
+            });
+            const rawResponse = await response.text();
+            let data = {};
+            if (rawResponse) {
+                try {
+                    data = JSON.parse(rawResponse);
+                } catch {
+                    data = {detail: rawResponse};
+                }
+            }
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Не удалось сохранить изменения');
+            }
+
+            console.log('Успешно:', data);
+            window.location.href = '/todo/list/?limit={{ limit }}&skip={{ skip }}';
+        } catch (error) {
+            showLlmActionMessage(error.message || 'Не удалось сохранить изменения.', 'danger');
+            saveButton.disabled = false;
+            saveButton.textContent = initialSaveButtonText;
+        }
     });
 
     const generateSummaryButton = document.getElementById('generateSummaryButton');
+    const cancelGenerateSummaryButton = document.getElementById('cancelGenerateSummaryButton');
     const generateLlmSummaryButton = document.getElementById('generateLlmSummaryButton');
+    const cancelGenerateLlmSummaryButton = document.getElementById('cancelGenerateLlmSummaryButton');
     const summaryMessage = document.getElementById('summaryMessage');
     const spacySummary = document.getElementById('spacySummary');
     const llmSummary = document.getElementById('llmSummary');
     const generateTitleBtn = document.getElementById('generateTitleBtn');
+    const cancelGenerateTitleBtn = document.getElementById('cancelGenerateTitleBtn');
     const suggestTagBtn = document.getElementById('suggestTagBtn');
+    const cancelSuggestTagBtn = document.getElementById('cancelSuggestTagBtn');
     const llmActionMessage = document.getElementById('llmActionMessage');
+    let llmActionMessageTimer = null;
+    let summaryMessageTimer = null;
+    let generateSummaryController = null;
+    let generateLlmSummaryController = null;
+    let generateTitleController = null;
+    let suggestTagController = null;
 
     function showLlmActionMessage(text, kind = 'success') {
         llmActionMessage.className = `alert alert-${kind} mb-0`;
         llmActionMessage.textContent = text;
         llmActionMessage.classList.remove('d-none');
+        if (llmActionMessageTimer) {
+            clearTimeout(llmActionMessageTimer);
+        }
+        llmActionMessageTimer = setTimeout(() => {
+            llmActionMessage.classList.add('d-none');
+            llmActionMessageTimer = null;
+        }, 7000);
     }
 
     function showSummaryMessage(text, kind = 'success') {
         summaryMessage.className = `alert alert-${kind} mt-3 mb-0`;
         summaryMessage.textContent = text;
         summaryMessage.classList.remove('d-none');
+        if (summaryMessageTimer) {
+            clearTimeout(summaryMessageTimer);
+        }
+        summaryMessageTimer = setTimeout(() => {
+            summaryMessage.classList.add('d-none');
+            summaryMessageTimer = null;
+        }, 7000);
+    }
+
+    function setGenerationState(actionButton, cancelButton, isLoading, loadingText, defaultText) {
+        actionButton.disabled = isLoading;
+        actionButton.textContent = isLoading ? loadingText : defaultText;
+        cancelButton.classList.toggle('d-none', !isLoading);
     }
 
     generateSummaryButton.addEventListener('click', async () => {
-        generateSummaryButton.disabled = true;
-        generateSummaryButton.textContent = 'Формируем...';
+        generateSummaryController = new AbortController();
+        setGenerationState(
+            generateSummaryButton,
+            cancelGenerateSummaryButton,
+            true,
+            'Формируем...',
+            'Сформировать spaCy-реферат'
+        );
 
         try {
             const response = await fetchWithAuth('/todo/summarize/{{ todo.id }}/', {
-                method: 'POST'
+                method: 'POST',
+                signal: generateSummaryController.signal
             });
             const data = await response.json();
 
@@ -250,20 +315,41 @@
             spacySummary.value = data.spacy_summary || '';
             showSummaryMessage('Реферат успешно сформирован и сохранён.', 'success');
         } catch (error) {
-            showSummaryMessage(error.message || 'Не удалось сформировать реферат.', 'danger');
+            if (error.name === 'AbortError') {
+                showSummaryMessage('Формирование реферата отменено.', 'warning');
+            } else {
+                showSummaryMessage(error.message || 'Не удалось сформировать реферат.', 'danger');
+            }
         } finally {
-            generateSummaryButton.disabled = false;
-            generateSummaryButton.textContent = 'Сформировать spaCy-реферат';
+            generateSummaryController = null;
+            setGenerationState(
+                generateSummaryButton,
+                cancelGenerateSummaryButton,
+                false,
+                'Формируем...',
+                'Сформировать spaCy-реферат'
+            );
         }
     });
 
+    cancelGenerateSummaryButton.addEventListener('click', () => {
+        generateSummaryController?.abort();
+    });
+
     generateLlmSummaryButton.addEventListener('click', async () => {
-        generateLlmSummaryButton.disabled = true;
-        generateLlmSummaryButton.textContent = 'Формируем...';
+        generateLlmSummaryController = new AbortController();
+        setGenerationState(
+            generateLlmSummaryButton,
+            cancelGenerateLlmSummaryButton,
+            true,
+            'Формируем...',
+            'Сформировать OpenRouter-реферат'
+        );
 
         try {
             const response = await fetchWithAuth('/todo/llm/summarize/{{ todo.id }}/', {
-                method: 'POST'
+                method: 'POST',
+                signal: generateLlmSummaryController.signal
             });
             const data = await response.json();
 
@@ -274,11 +360,25 @@
             llmSummary.value = data.llm_summary || '';
             showSummaryMessage('OpenRouter-реферат успешно сформирован и сохранён.', 'success');
         } catch (error) {
-            showSummaryMessage(error.message || 'Не удалось сформировать реферат через OpenRouter.', 'danger');
+            if (error.name === 'AbortError') {
+                showSummaryMessage('Формирование реферата отменено.', 'warning');
+            } else {
+                showSummaryMessage(error.message || 'Не удалось сформировать реферат через OpenRouter.', 'danger');
+            }
         } finally {
-            generateLlmSummaryButton.disabled = false;
-            generateLlmSummaryButton.textContent = 'Сформировать OpenRouter-реферат';
+            generateLlmSummaryController = null;
+            setGenerationState(
+                generateLlmSummaryButton,
+                cancelGenerateLlmSummaryButton,
+                false,
+                'Формируем...',
+                'Сформировать OpenRouter-реферат'
+            );
         }
+    });
+
+    cancelGenerateLlmSummaryButton.addEventListener('click', () => {
+        generateLlmSummaryController?.abort();
     });
 
     const tagInput = document.getElementById('tagInput');
@@ -372,14 +472,22 @@
     });
 
     generateTitleBtn.addEventListener('click', async () => {
-        generateTitleBtn.disabled = true;
+        generateTitleController = new AbortController();
+        setGenerationState(
+            generateTitleBtn,
+            cancelGenerateTitleBtn,
+            true,
+            'Формируем...',
+            'Подобрать заголовок через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', titleInput.value);
             formData.append('details', detailsInput.value);
             const response = await fetchWithAuth('/todo/ai/generate-title/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: generateTitleController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -388,21 +496,44 @@
             titleInput.value = data.title || '';
             showLlmActionMessage('OpenRouter предложил заголовок.', 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Генерация заголовка отменена.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            }
         } finally {
-            generateTitleBtn.disabled = false;
+            generateTitleController = null;
+            setGenerationState(
+                generateTitleBtn,
+                cancelGenerateTitleBtn,
+                false,
+                'Формируем...',
+                'Подобрать заголовок через OpenRouter'
+            );
         }
     });
 
+    cancelGenerateTitleBtn.addEventListener('click', () => {
+        generateTitleController?.abort();
+    });
+
     suggestTagBtn.addEventListener('click', async () => {
-        suggestTagBtn.disabled = true;
+        suggestTagController = new AbortController();
+        setGenerationState(
+            suggestTagBtn,
+            cancelSuggestTagBtn,
+            true,
+            'Формируем...',
+            'Предложить тег через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', titleInput.value);
             formData.append('details', detailsInput.value);
             const response = await fetchWithAuth('/todo/ai/suggest-tag/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: suggestTagController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -412,10 +543,25 @@
             clearTagBtn.style.display = tagInput.value ? '' : 'none';
             showLlmActionMessage(`OpenRouter предложил тег. Похожих заметок в кластере: ${data.cluster_size || 0}.`, 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Подбор тега отменён.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            }
         } finally {
-            suggestTagBtn.disabled = false;
+            suggestTagController = null;
+            setGenerationState(
+                suggestTagBtn,
+                cancelSuggestTagBtn,
+                false,
+                'Формируем...',
+                'Предложить тег через OpenRouter'
+            );
         }
+    });
+
+    cancelSuggestTagBtn.addEventListener('click', () => {
+        suggestTagController?.abort();
     });
 
     fetchWithAuth('/todo/api/tags/')

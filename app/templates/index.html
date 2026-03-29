@@ -8,13 +8,16 @@
                placeholder="Введите задачу" required>
         <label for="title">Введите задачу</label>
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-primary btn-sm" id="generateTitleBtn">Подобрать заголовок через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelGenerateTitleBtn">Отмена</button>
     </div>
-    <div class="form-floating">
-        <textarea maxlength="500" class="form-control" placeholder="Введите описание задач" name="details" id="details"
-                  style="height: 100px"></textarea>
-        <label for="details">Введите описание задач</label>
+    <div>
+        <textarea class="form-control" placeholder="Введите описание задач" name="details" id="details"
+                  style="height: 140px"></textarea>
+    </div>
+    <div id="detailsLimitMessage" class="alert alert-warning d-none mb-0" role="alert">
+        Описание заметки не может превышать 1000 символов. Текст был обрезан.
     </div>
 
     <div class="position-relative">
@@ -23,8 +26,9 @@
                placeholder="Введите или выберите тег..." autocomplete="off">
         <div id="tagDropdown" class="tag-dropdown d-none"></div>
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="suggestTagBtn">Предложить тег через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelSuggestTagBtn">Отмена</button>
     </div>
 
     <div id="llmActionMessage" class="alert d-none mb-0" role="alert"></div>
@@ -83,13 +87,55 @@
 <script>
     const DAYS_RU = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
     const generateTitleBtn = document.getElementById('generateTitleBtn');
+    const cancelGenerateTitleBtn = document.getElementById('cancelGenerateTitleBtn');
     const suggestTagBtn = document.getElementById('suggestTagBtn');
+    const cancelSuggestTagBtn = document.getElementById('cancelSuggestTagBtn');
     const llmActionMessage = document.getElementById('llmActionMessage');
+    const detailsInput = document.getElementById('details');
+    const detailsLimitMessage = document.getElementById('detailsLimitMessage');
+    const DETAILS_MAX_LENGTH = 1000;
+    let detailsLimitTimer = null;
+    let llmActionMessageTimer = null;
+    let generateTitleController = null;
+    let suggestTagController = null;
 
     function showLlmActionMessage(text, kind = 'success') {
         llmActionMessage.textContent = text;
         llmActionMessage.className = `alert alert-${kind} mb-0`;
         llmActionMessage.classList.remove('d-none');
+        if (llmActionMessageTimer) {
+            clearTimeout(llmActionMessageTimer);
+        }
+        llmActionMessageTimer = setTimeout(() => {
+            llmActionMessage.classList.add('d-none');
+            llmActionMessageTimer = null;
+        }, 7000);
+    }
+
+    function showDetailsLimitMessage() {
+        if (detailsLimitTimer) {
+            clearTimeout(detailsLimitTimer);
+        }
+        detailsLimitMessage.classList.remove('d-none');
+        detailsLimitTimer = setTimeout(() => {
+            detailsLimitMessage.classList.add('d-none');
+            detailsLimitTimer = null;
+        }, 5000);
+    }
+
+    function clampDetailsValue() {
+        if (detailsInput.value.length <= DETAILS_MAX_LENGTH) {
+            return false;
+        }
+        detailsInput.value = detailsInput.value.slice(0, DETAILS_MAX_LENGTH);
+        showDetailsLimitMessage();
+        return true;
+    }
+
+    function setGenerationState(actionButton, cancelButton, isLoading, loadingText, defaultText) {
+        actionButton.disabled = isLoading;
+        actionButton.textContent = isLoading ? loadingText : defaultText;
+        cancelButton.classList.toggle('d-none', !isLoading);
     }
 
     // ── Tag autocomplete ──────────────────────────────────────
@@ -193,16 +239,28 @@
         }
     }
     document.getElementById('due_date').addEventListener('change', updateDayLabel);
+    detailsInput.addEventListener('input', clampDetailsValue);
+    detailsInput.addEventListener('paste', () => {
+        setTimeout(clampDetailsValue, 0);
+    });
 
     generateTitleBtn.addEventListener('click', async () => {
-        generateTitleBtn.disabled = true;
+        generateTitleController = new AbortController();
+        setGenerationState(
+            generateTitleBtn,
+            cancelGenerateTitleBtn,
+            true,
+            'Формируем...',
+            'Подобрать заголовок через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', document.getElementById('title').value);
             formData.append('details', document.getElementById('details').value);
             const response = await fetchWithAuth('/todo/ai/generate-title/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: generateTitleController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -211,21 +269,44 @@
             document.getElementById('title').value = data.title || '';
             showLlmActionMessage('OpenRouter предложил заголовок.', 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Генерация заголовка отменена.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            }
         } finally {
-            generateTitleBtn.disabled = false;
+            generateTitleController = null;
+            setGenerationState(
+                generateTitleBtn,
+                cancelGenerateTitleBtn,
+                false,
+                'Формируем...',
+                'Подобрать заголовок через OpenRouter'
+            );
         }
     });
 
+    cancelGenerateTitleBtn.addEventListener('click', () => {
+        generateTitleController?.abort();
+    });
+
     suggestTagBtn.addEventListener('click', async () => {
-        suggestTagBtn.disabled = true;
+        suggestTagController = new AbortController();
+        setGenerationState(
+            suggestTagBtn,
+            cancelSuggestTagBtn,
+            true,
+            'Формируем...',
+            'Предложить тег через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', document.getElementById('title').value);
             formData.append('details', document.getElementById('details').value);
             const response = await fetchWithAuth('/todo/ai/suggest-tag/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: suggestTagController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -234,15 +315,35 @@
             tagInput.value = data.tag || '';
             showLlmActionMessage(`OpenRouter предложил тег. Похожих заметок в кластере: ${data.cluster_size || 0}.`, 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Подбор тега отменён.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            }
         } finally {
-            suggestTagBtn.disabled = false;
+            suggestTagController = null;
+            setGenerationState(
+                suggestTagBtn,
+                cancelSuggestTagBtn,
+                false,
+                'Формируем...',
+                'Предложить тег через OpenRouter'
+            );
         }
     });
 
+    cancelSuggestTagBtn.addEventListener('click', () => {
+        suggestTagController?.abort();
+    });
+
     // ── Form submit ──────────────────────────────────────────
-    document.getElementById('todoForm').addEventListener('submit', function (e) {
+    const todoForm = document.getElementById('todoForm');
+    const submitButton = todoForm.querySelector('button[type="submit"]');
+
+    todoForm.addEventListener('submit', async function (e) {
         e.preventDefault();
+
+        clampDetailsValue();
 
         const formData = new FormData(this);
         formData.append('source', 'Созданная');
@@ -256,19 +357,40 @@
             formData.append('due_at', `${dateVal}T${time}:00`);
         }
 
-        fetchWithAuth('/todo/add/', {method: 'POST', body: formData})
-            .then(res => {
-                if (res.status === 401) { window.location.href = '/todo/401/'; return; }
-                return res.json();
-            })
-            .then(data => {
-                if (!data) { window.location.href = '/todo/401/'; return; }
-                window.location.href = '/todo/list/';
-            })
-            .catch(error => console.error('Ошибка:', error));
+        const initialSubmitButtonText = submitButton.textContent;
+        submitButton.disabled = true;
+        submitButton.textContent = 'Добавляем...';
 
-        this.reset();
-        document.getElementById('due_day_label').textContent = '';
+        try {
+            const response = await fetchWithAuth('/todo/add/', {method: 'POST', body: formData});
+            if (response.status === 401) {
+                window.location.href = '/todo/401/';
+                return;
+            }
+
+            const rawResponse = await response.text();
+            let data = {};
+            if (rawResponse) {
+                try {
+                    data = JSON.parse(rawResponse);
+                } catch {
+                    data = {detail: rawResponse};
+                }
+            }
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Не удалось добавить заметку.');
+            }
+
+            this.reset();
+            document.getElementById('due_day_label').textContent = '';
+            detailsLimitMessage.classList.add('d-none');
+            window.location.href = '/todo/list/';
+        } catch (error) {
+            showLlmActionMessage(error.message || 'Не удалось добавить заметку.', 'danger');
+            submitButton.disabled = false;
+            submitButton.textContent = initialSubmitButtonText;
+        }
     });
 </script>
 
