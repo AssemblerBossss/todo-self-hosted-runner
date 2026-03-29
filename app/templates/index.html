@@ -8,8 +8,9 @@
                placeholder="Введите задачу" required>
         <label for="title">Введите задачу</label>
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-primary btn-sm" id="generateTitleBtn">Подобрать заголовок через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelGenerateTitleBtn">Отмена</button>
     </div>
     <div>
         <textarea class="form-control" placeholder="Введите описание задач" name="details" id="details"
@@ -25,8 +26,9 @@
                placeholder="Введите или выберите тег..." autocomplete="off">
         <div id="tagDropdown" class="tag-dropdown d-none"></div>
     </div>
-    <div class="d-flex justify-content-end">
+    <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="suggestTagBtn">Предложить тег через OpenRouter</button>
+        <button type="button" class="btn btn-danger btn-sm d-none" id="cancelSuggestTagBtn">Отмена</button>
     </div>
 
     <div id="llmActionMessage" class="alert d-none mb-0" role="alert"></div>
@@ -85,13 +87,17 @@
 <script>
     const DAYS_RU = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
     const generateTitleBtn = document.getElementById('generateTitleBtn');
+    const cancelGenerateTitleBtn = document.getElementById('cancelGenerateTitleBtn');
     const suggestTagBtn = document.getElementById('suggestTagBtn');
+    const cancelSuggestTagBtn = document.getElementById('cancelSuggestTagBtn');
     const llmActionMessage = document.getElementById('llmActionMessage');
     const detailsInput = document.getElementById('details');
     const detailsLimitMessage = document.getElementById('detailsLimitMessage');
     const DETAILS_MAX_LENGTH = 1000;
     let detailsLimitTimer = null;
     let llmActionMessageTimer = null;
+    let generateTitleController = null;
+    let suggestTagController = null;
 
     function showLlmActionMessage(text, kind = 'success') {
         llmActionMessage.textContent = text;
@@ -124,6 +130,12 @@
         detailsInput.value = detailsInput.value.slice(0, DETAILS_MAX_LENGTH);
         showDetailsLimitMessage();
         return true;
+    }
+
+    function setGenerationState(actionButton, cancelButton, isLoading, loadingText, defaultText) {
+        actionButton.disabled = isLoading;
+        actionButton.textContent = isLoading ? loadingText : defaultText;
+        cancelButton.classList.toggle('d-none', !isLoading);
     }
 
     // ── Tag autocomplete ──────────────────────────────────────
@@ -233,14 +245,22 @@
     });
 
     generateTitleBtn.addEventListener('click', async () => {
-        generateTitleBtn.disabled = true;
+        generateTitleController = new AbortController();
+        setGenerationState(
+            generateTitleBtn,
+            cancelGenerateTitleBtn,
+            true,
+            'Формируем...',
+            'Подобрать заголовок через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', document.getElementById('title').value);
             formData.append('details', document.getElementById('details').value);
             const response = await fetchWithAuth('/todo/ai/generate-title/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: generateTitleController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -249,21 +269,44 @@
             document.getElementById('title').value = data.title || '';
             showLlmActionMessage('OpenRouter предложил заголовок.', 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Генерация заголовка отменена.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
+            }
         } finally {
-            generateTitleBtn.disabled = false;
+            generateTitleController = null;
+            setGenerationState(
+                generateTitleBtn,
+                cancelGenerateTitleBtn,
+                false,
+                'Формируем...',
+                'Подобрать заголовок через OpenRouter'
+            );
         }
     });
 
+    cancelGenerateTitleBtn.addEventListener('click', () => {
+        generateTitleController?.abort();
+    });
+
     suggestTagBtn.addEventListener('click', async () => {
-        suggestTagBtn.disabled = true;
+        suggestTagController = new AbortController();
+        setGenerationState(
+            suggestTagBtn,
+            cancelSuggestTagBtn,
+            true,
+            'Формируем...',
+            'Предложить тег через OpenRouter'
+        );
         try {
             const formData = new FormData();
             formData.append('title', document.getElementById('title').value);
             formData.append('details', document.getElementById('details').value);
             const response = await fetchWithAuth('/todo/ai/suggest-tag/', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: suggestTagController.signal
             });
             const data = await response.json();
             if (!response.ok) {
@@ -272,10 +315,25 @@
             tagInput.value = data.tag || '';
             showLlmActionMessage(`OpenRouter предложил тег. Похожих заметок в кластере: ${data.cluster_size || 0}.`, 'success');
         } catch (error) {
-            showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            if (error.name === 'AbortError') {
+                showLlmActionMessage('Подбор тега отменён.', 'warning');
+            } else {
+                showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
+            }
         } finally {
-            suggestTagBtn.disabled = false;
+            suggestTagController = null;
+            setGenerationState(
+                suggestTagBtn,
+                cancelSuggestTagBtn,
+                false,
+                'Формируем...',
+                'Предложить тег через OpenRouter'
+            );
         }
+    });
+
+    cancelSuggestTagBtn.addEventListener('click', () => {
+        suggestTagController?.abort();
     });
 
     // ── Form submit ──────────────────────────────────────────
