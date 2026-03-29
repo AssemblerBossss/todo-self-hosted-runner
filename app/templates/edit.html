@@ -14,12 +14,11 @@
     <div class="d-flex justify-content-end">
         <button type="button" class="btn btn-outline-primary btn-sm" id="generateTitleBtn">Подобрать заголовок через OpenRouter</button>
     </div>
-    <div class="form-floating">
+    <div>
         <textarea class="form-control" maxlength="500" placeholder="Введите описание задачи" name="details" id="details"
                   style="height: 100px"
                   data-original-value="{{ todo.details or '' }}"
                   data-masked-value="{{ todo.display_details or '' }}">{{ todo.display_details or '' }}</textarea>
-        <label for="details">Введите описание задачи</label>
     </div>
 
     {% if todo.classification_level %}
@@ -373,6 +372,7 @@
 
     generateTitleBtn.addEventListener('click', async () => {
         generateTitleBtn.disabled = true;
+        generateTitleBtn.textContent = 'Формируем...';
         try {
             const formData = new FormData();
             formData.append('title', titleInput.value);
@@ -391,11 +391,13 @@
             showLlmActionMessage(error.message || 'Не удалось сгенерировать заголовок.', 'danger');
         } finally {
             generateTitleBtn.disabled = false;
+            generateTitleBtn.textContent = 'Подобрать заголовок через OpenRouter';
         }
     });
 
     suggestTagBtn.addEventListener('click', async () => {
         suggestTagBtn.disabled = true;
+        suggestTagBtn.textContent = 'Формируем...';
         try {
             const formData = new FormData();
             formData.append('title', titleInput.value);
@@ -415,6 +417,7 @@
             showLlmActionMessage(error.message || 'Не удалось подобрать тег.', 'danger');
         } finally {
             suggestTagBtn.disabled = false;
+            suggestTagBtn.textContent = 'Предложить тег через OpenRouter';
         }
     });
 
