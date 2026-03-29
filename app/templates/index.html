@@ -91,11 +91,19 @@
     const detailsLimitMessage = document.getElementById('detailsLimitMessage');
     const DETAILS_MAX_LENGTH = 1000;
     let detailsLimitTimer = null;
+    let llmActionMessageTimer = null;
 
     function showLlmActionMessage(text, kind = 'success') {
         llmActionMessage.textContent = text;
         llmActionMessage.className = `alert alert-${kind} mb-0`;
         llmActionMessage.classList.remove('d-none');
+        if (llmActionMessageTimer) {
+            clearTimeout(llmActionMessageTimer);
+        }
+        llmActionMessageTimer = setTimeout(() => {
+            llmActionMessage.classList.add('d-none');
+            llmActionMessageTimer = null;
+        }, 7000);
     }
 
     function showDetailsLimitMessage() {

@@ -105,9 +105,7 @@ class TodoService:
     @staticmethod
     def _ensure_llm_source_text(details: str | None) -> str:
         if not details or not details.strip():
-            raise LLMRequestException(
-                "Для LLM-операции нужно заполнить описание заметки."
-            )
+            raise LLMRequestException("Для выполнения операции нужно заполнить описание заметки.")
         return details.strip()
 
     @staticmethod

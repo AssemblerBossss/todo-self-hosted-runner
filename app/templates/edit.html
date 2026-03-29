@@ -219,17 +219,33 @@
     const generateTitleBtn = document.getElementById('generateTitleBtn');
     const suggestTagBtn = document.getElementById('suggestTagBtn');
     const llmActionMessage = document.getElementById('llmActionMessage');
+    let llmActionMessageTimer = null;
+    let summaryMessageTimer = null;
 
     function showLlmActionMessage(text, kind = 'success') {
         llmActionMessage.className = `alert alert-${kind} mb-0`;
         llmActionMessage.textContent = text;
         llmActionMessage.classList.remove('d-none');
+        if (llmActionMessageTimer) {
+            clearTimeout(llmActionMessageTimer);
+        }
+        llmActionMessageTimer = setTimeout(() => {
+            llmActionMessage.classList.add('d-none');
+            llmActionMessageTimer = null;
+        }, 7000);
     }
 
     function showSummaryMessage(text, kind = 'success') {
         summaryMessage.className = `alert alert-${kind} mt-3 mb-0`;
         summaryMessage.textContent = text;
         summaryMessage.classList.remove('d-none');
+        if (summaryMessageTimer) {
+            clearTimeout(summaryMessageTimer);
+        }
+        summaryMessageTimer = setTimeout(() => {
+            summaryMessage.classList.add('d-none');
+            summaryMessageTimer = null;
+        }, 7000);
     }
 
     generateSummaryButton.addEventListener('click', async () => {
