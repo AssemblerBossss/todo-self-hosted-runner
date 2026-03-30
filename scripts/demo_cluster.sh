@@ -15,3 +15,15 @@ echo ""
 echo "--- Текущий мастер-узел ---"
 curl -s "$ES/_cat/master?v"
 echo ""
+
+echo "========================================"
+echo " 2. Создать индекс: 3 шарда, 1 реплика"
+echo "========================================"
+curl -s -X DELETE "$ES/$INDEX" > /dev/null 2>&1
+curl -s -X PUT "$ES/$INDEX" -H 'Content-Type: application/json' -d '{
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 1
+  }
+}' | python3 -m json.tool
+echo ""
