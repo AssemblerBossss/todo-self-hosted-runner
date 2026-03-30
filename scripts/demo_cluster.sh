@@ -27,3 +27,20 @@ curl -s -X PUT "$ES/$INDEX" -H 'Content-Type: application/json' -d '{
   }
 }' | python3 -m json.tool
 echo ""
+
+echo "========================================"
+echo " 3. Добавить документ (через es01:9200)"
+echo "========================================"
+curl -s -X POST "$ES/$INDEX/_doc/1" -H 'Content-Type: application/json' -d '{
+  "title": "Демо задача",
+  "description": "Документ для демонстрации шардирования и репликации",
+  "status": "active",
+  "created_at": "2026-03-30"
+}' | python3 -m json.tool
+echo ""
+
+echo "========================================"
+echo " 4. Прочитать документ ЧЕРЕЗ ДРУГОЙ УЗЕЛ (es02:9201)"
+echo "========================================"
+curl -s "$ES2/$INDEX/_doc/1" | python3 -m json.tool
+echo ""
