@@ -223,6 +223,7 @@ class AuthService:
                 await uow_session.elastic.delete_todo(todo.id)
 
             await uow_session.todo.clear_updated_by_for_user(user_id)
+            await uow_session.todo.clear_edit_history_editor_for_user(user_id)
             await uow_session.todo.delete_by_author_id(user_id)
             await uow_session.token.delete_by_user_id(user_id)
             await uow_session.auth.delete_by_id(user_id)

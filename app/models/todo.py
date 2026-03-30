@@ -54,5 +54,11 @@ class Todo(Base):
         back_populates="updated_todos",
     )
 
+    edit_history = relationship(
+        "TodoEditHistory",
+        back_populates="todo",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self):
         return f"<Todo {self.id}>"

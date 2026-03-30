@@ -15,7 +15,7 @@ from app.exceptions import (
     LLMRequestException,
     NotFoundException,
 )
-from app.models import Todo as TodoORM
+from app.models import Todo as TodoORM, TodoEditHistory
 from app.schemas import SUserInfo, Tags, Todo as TodoSchema, TodoSource, UserRole
 from app.services.openrouter import OpenRouterService
 from app.services.search_index import build_search_document
@@ -85,6 +85,29 @@ GENERATED_DETAILS = [
 class TodoService:
     def __init__(self, openrouter_service: OpenRouterService) -> None:
         self._openrouter_service = openrouter_service
+
+    @staticmethod
+    def _build_todo_history_entry(
+        todo: TodoORM,
+        editor_id: int,
+        action: str,
+    ) -> TodoEditHistory:
+        edited_at = todo.updated_at or datetime.now(UTC)
+        return TodoEditHistory(
+            todo_id=todo.id,
+            editor_id=editor_id,
+            action=action,
+            edited_at=edited_at,
+            title=todo.title,
+            details=todo.details,
+            tag=todo.tag,
+            completed=todo.completed,
+            completed_at=todo.completed_at,
+            due_at=todo.due_at,
+            image_path=todo.image_path,
+            spacy_summary=todo.spacy_summary,
+            llm_summary=todo.llm_summary,
+        )
 
     @staticmethod
     def _can_view_only_own_todos(user: SUserInfo) -> bool:
@@ -481,6 +504,19 @@ class TodoService:
             resolved_image_path, resolved_image_hash = await self._resolve_image(
                 uow_session, todo, image, existing_image, image_path
             )
+            has_changes = any(
+                [
+                    title != todo.title,
+                    details != todo.details,
+                    completed != todo.completed,
+                    tag != todo.tag,
+                    resolved_image_path != todo.image_path,
+                    resolved_image_hash != todo.image_hash,
+                ]
+            )
+            if not has_changes:
+                return todo
+
             todo_change = TodoSchema(
                 title=title,
                 details=details,
@@ -508,6 +544,9 @@ class TodoService:
                 user_id=user.id,
             )
             updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "edit")
+            )
         try:
             await self._sync_todo_to_search_index(uow_session, todo_id)
         except Exception as e:
@@ -536,6 +575,10 @@ class TodoService:
                 spacy_summary=summary,
                 user_id=user.id,
             )
+            updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "spacy_summary")
+            )
             return summary
 
     async def summarize_with_llm(
@@ -557,6 +600,10 @@ class TodoService:
                 todo_id=todo_id,
                 llm_summary=summary,
                 user_id=user.id,
+            )
+            updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "llm_summary")
             )
             return summary
 
