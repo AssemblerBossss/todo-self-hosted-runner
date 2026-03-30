@@ -34,7 +34,7 @@ from app.utils import (
 
 logger = logging.getLogger(__name__)
 TODO_DETAILS_MAX_LENGTH = 1000
-
+SEARCH_RESULTS_FETCH_LIMIT = 1000
 GENERATED_TITLES = [
     "Купить продукты",
     "Сделать домашнее задание",
@@ -233,7 +233,7 @@ class TodoService:
         uow_session: UnitOfWork,
         hits: list[dict],
     ) -> list[dict]:
-        todo_ids = [hit["todo_id"] for hit in hits]
+        todo_ids = [int(hit["todo_id"]) for hit in hits if hit.get("todo_id") is not None]
         if not todo_ids:
             return []
 
@@ -310,18 +310,27 @@ class TodoService:
 
         if query:
             logger.debug("Поиск по запросу: %s", query)
-            hits = await uow_session.elastic.search_todos(
+            search_result = await uow_session.elastic.search_todos(
                 query_text=query,
                 tag=tag,
-                limit=limit,
-                skip=skip,
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
                 author_id=author_id,
             )
-            todos = await self._get_search_todos_from_hits(uow_session, hits)
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "query",
                 "subtitle": "Результаты поиска по запросу: %s" % query,
             }
@@ -330,16 +339,26 @@ class TodoService:
             tag_display = search_tag.capitalize()
 
             logger.debug("Поиск по тегу: %s", tag_display)
-            todos = enrich_todo_display_list(
-                await uow_session.elastic.search_by_tag(
-                    search_tag.capitalize(),
-                    author_id=author_id,
-                )
+            search_result = await uow_session.elastic.search_by_tag(
+                search_tag.capitalize(),
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
+                author_id=author_id,
             )
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "tag",
                 "subtitle": "Результаты поиска по тегу: %s" % tag_display,
             }
@@ -347,15 +366,26 @@ class TodoService:
         if search_date_from:
             date_from_dt = datetime.fromisoformat(search_date_from)
             logger.debug("Поиск по дате от: %s", date_from_dt)
-            todos = enrich_todo_display_list(
-                await uow_session.elastic.search_by_date(
-                    date_from_dt.isoformat(), author_id=author_id
-                )
+            search_result = await uow_session.elastic.search_by_date(
+                date_from_dt.isoformat(),
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
+                author_id=author_id
             )
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "date",
                 "subtitle": "Результаты поиска после %s"
                 % date_from_dt.strftime("%d.%m.%Y %H:%M"),
@@ -375,6 +405,7 @@ class TodoService:
             "todos": todos,
             "skip": skip,
             "pages": pages,
+            "total": len(todos),
             "search_mode": None,
             "subtitle": None,
         }
