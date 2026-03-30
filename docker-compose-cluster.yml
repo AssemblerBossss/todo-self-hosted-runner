@@ -71,6 +71,21 @@ services:
       - elastic
     restart: unless-stopped
 
+  kibana:
+    image: kibana:9.3.0
+    container_name: kibana-cluster
+    environment:
+      - ELASTICSEARCH_HOSTS=http://es01:9200
+      - XPACK_SECURITY_ENABLED=false
+      - ELASTICSEARCH_SSL_VERIFICATION_MODE=none
+    ports:
+      - "5601:5601"
+    networks:
+      - elastic
+    depends_on:
+      - es01
+    restart: unless-stopped
+
 networks:
   elastic:
     driver: bridge
