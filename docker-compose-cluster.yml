@@ -23,6 +23,30 @@ services:
       - elastic
     restart: unless-stopped
 
+  es02:
+    image: elasticsearch:9.3.0
+    container_name: es02
+    environment:
+      - node.name=es02
+      - cluster.name=todo-cluster
+      - cluster.initial_master_nodes=es01,es02,es03
+      - discovery.seed_hosts=es01,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - esdata02:/usr/share/elasticsearch/data
+    ports:
+      - "9201:9200"
+    networks:
+      - elastic
+    restart: unless-stopped
+
 networks:
   elastic:
     driver: bridge
