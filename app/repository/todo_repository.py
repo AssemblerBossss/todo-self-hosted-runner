@@ -4,7 +4,7 @@ from sqlalchemy import select, delete, update, func, desc, distinct, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Todo
+from app.models import Todo, TodoEditHistory
 
 
 class TodoRepository:
@@ -38,6 +38,7 @@ class TodoRepository:
             .options(
                 selectinload(Todo.author),
                 selectinload(Todo.updated_by_user),
+                selectinload(Todo.edit_history).selectinload(TodoEditHistory.editor),
             )
             .where(Todo.id == todo_id)
         )
@@ -105,6 +106,9 @@ class TodoRepository:
         """
         self._session.add(todo)
 
+    async def add_edit_history(self, history_entry: TodoEditHistory) -> None:
+        self._session.add(history_entry)
+
     async def update(self, todo_id: int, values: dict, user_id: int) -> None:
         values["updated_at"] = datetime.now(timezone.utc)
         values["updated_by"] = user_id
@@ -137,12 +141,19 @@ class TodoRepository:
         )
 
     async def delete_todo(self, todo_id: int):
+        await self._session.execute(
+            delete(TodoEditHistory).where(TodoEditHistory.todo_id == todo_id)
+        )
         await self._session.execute(delete(Todo).where(Todo.id == todo_id))
 
     async def delete_by_ids(self, ids: list[int]) -> None:
+        await self._session.execute(
+            delete(TodoEditHistory).where(TodoEditHistory.todo_id.in_(ids))
+        )
         await self._session.execute(delete(Todo).where(Todo.id.in_(ids)))
 
     async def delete_all(self) -> None:
+        await self._session.execute(delete(TodoEditHistory))
         await self._session.execute(delete(Todo))
 
     async def get_all_image_paths(self):
@@ -187,12 +198,23 @@ class TodoRepository:
 
     async def delete_by_author_id(self, author_id: int) -> None:
         """Удалить все todo пользователя"""
+        todo_ids_query = select(Todo.id).where(Todo.author_id == author_id)
+        await self._session.execute(
+            delete(TodoEditHistory).where(TodoEditHistory.todo_id.in_(todo_ids_query))
+        )
         await self._session.execute(delete(Todo).where(Todo.author_id == author_id))
 
     async def clear_updated_by_for_user(self, user_id: int) -> None:
         """Очистить ссылки на пользователя в поле updated_by."""
         await self._session.execute(
             update(Todo).where(Todo.updated_by == user_id).values(updated_by=None)
+        )
+
+    async def clear_edit_history_editor_for_user(self, user_id: int) -> None:
+        await self._session.execute(
+            update(TodoEditHistory)
+            .where(TodoEditHistory.editor_id == user_id)
+            .values(editor_id=None)
         )
 
     async def get_duplicate_groups(self, author_id: int | None = None) -> list[dict]:

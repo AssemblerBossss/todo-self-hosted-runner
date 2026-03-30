@@ -51,3 +51,9 @@ class User(Base):
         back_populates="updated_by_user",
         cascade="all, delete-orphan",
     )
+
+    todo_edit_history = relationship(
+        "TodoEditHistory",
+        foreign_keys="[TodoEditHistory.editor_id]",
+        back_populates="editor",
+    )

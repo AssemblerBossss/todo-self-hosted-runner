@@ -15,7 +15,7 @@ from app.exceptions import (
     LLMRequestException,
     NotFoundException,
 )
-from app.models import Todo as TodoORM
+from app.models import Todo as TodoORM, TodoEditHistory
 from app.schemas import SUserInfo, Tags, Todo as TodoSchema, TodoSource, UserRole
 from app.services.openrouter import OpenRouterService
 from app.services.search_index import build_search_document
@@ -34,7 +34,7 @@ from app.utils import (
 
 logger = logging.getLogger(__name__)
 TODO_DETAILS_MAX_LENGTH = 1000
-
+SEARCH_RESULTS_FETCH_LIMIT = 1000
 GENERATED_TITLES = [
     "Купить продукты",
     "Сделать домашнее задание",
@@ -85,6 +85,29 @@ GENERATED_DETAILS = [
 class TodoService:
     def __init__(self, openrouter_service: OpenRouterService) -> None:
         self._openrouter_service = openrouter_service
+
+    @staticmethod
+    def _build_todo_history_entry(
+        todo: TodoORM,
+        editor_id: int,
+        action: str,
+    ) -> TodoEditHistory:
+        edited_at = todo.updated_at or datetime.now(UTC)
+        return TodoEditHistory(
+            todo_id=todo.id,
+            editor_id=editor_id,
+            action=action,
+            edited_at=edited_at,
+            title=todo.title,
+            details=todo.details,
+            tag=todo.tag,
+            completed=todo.completed,
+            completed_at=todo.completed_at,
+            due_at=todo.due_at,
+            image_path=todo.image_path,
+            spacy_summary=todo.spacy_summary,
+            llm_summary=todo.llm_summary,
+        )
 
     @staticmethod
     def _can_view_only_own_todos(user: SUserInfo) -> bool:
@@ -233,7 +256,7 @@ class TodoService:
         uow_session: UnitOfWork,
         hits: list[dict],
     ) -> list[dict]:
-        todo_ids = [hit["todo_id"] for hit in hits]
+        todo_ids = [int(hit["todo_id"]) for hit in hits if hit.get("todo_id") is not None]
         if not todo_ids:
             return []
 
@@ -310,18 +333,27 @@ class TodoService:
 
         if query:
             logger.debug("Поиск по запросу: %s", query)
-            hits = await uow_session.elastic.search_todos(
+            search_result = await uow_session.elastic.search_todos(
                 query_text=query,
                 tag=tag,
-                limit=limit,
-                skip=skip,
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
                 author_id=author_id,
             )
-            todos = await self._get_search_todos_from_hits(uow_session, hits)
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "query",
                 "subtitle": "Результаты поиска по запросу: %s" % query,
             }
@@ -330,16 +362,26 @@ class TodoService:
             tag_display = search_tag.capitalize()
 
             logger.debug("Поиск по тегу: %s", tag_display)
-            todos = enrich_todo_display_list(
-                await uow_session.elastic.search_by_tag(
-                    search_tag.capitalize(),
-                    author_id=author_id,
-                )
+            search_result = await uow_session.elastic.search_by_tag(
+                search_tag.capitalize(),
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
+                author_id=author_id,
             )
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "tag",
                 "subtitle": "Результаты поиска по тегу: %s" % tag_display,
             }
@@ -347,15 +389,26 @@ class TodoService:
         if search_date_from:
             date_from_dt = datetime.fromisoformat(search_date_from)
             logger.debug("Поиск по дате от: %s", date_from_dt)
-            todos = enrich_todo_display_list(
-                await uow_session.elastic.search_by_date(
-                    date_from_dt.isoformat(), author_id=author_id
-                )
+            search_result = await uow_session.elastic.search_by_date(
+                date_from_dt.isoformat(),
+                limit=SEARCH_RESULTS_FETCH_LIMIT,
+                skip=0,
+                author_id=author_id
             )
+            found_todos = await self._get_search_todos_from_hits(
+                uow_session,
+                search_result["items"],
+            )
+            total = len(found_todos)
+            pages = math.ceil(total / limit) if total else 1
+            start = skip * limit
+            end = start + limit
+            todos = found_todos[start:end]
             return {
                 "todos": todos,
-                "skip": 0,
-                "pages": 1,
+                "skip": skip,
+                "pages": pages,
+                "total": total,
                 "search_mode": "date",
                 "subtitle": "Результаты поиска после %s"
                 % date_from_dt.strftime("%d.%m.%Y %H:%M"),
@@ -375,6 +428,7 @@ class TodoService:
             "todos": todos,
             "skip": skip,
             "pages": pages,
+            "total": len(todos),
             "search_mode": None,
             "subtitle": None,
         }
@@ -441,7 +495,7 @@ class TodoService:
             if not todo:
                 raise NotFoundException(f"Todo with id {todo_id} not found")
 
-            if todo.author_id != user.id:
+            if user.role != UserRole.ADMIN and todo.author_id != user.id:
                 raise ForbiddenException("Вы можете редактировать только свои задачи")
 
             if details != todo.details:
@@ -450,6 +504,19 @@ class TodoService:
             resolved_image_path, resolved_image_hash = await self._resolve_image(
                 uow_session, todo, image, existing_image, image_path
             )
+            has_changes = any(
+                [
+                    title != todo.title,
+                    details != todo.details,
+                    completed != todo.completed,
+                    tag != todo.tag,
+                    resolved_image_path != todo.image_path,
+                    resolved_image_hash != todo.image_hash,
+                ]
+            )
+            if not has_changes:
+                return todo
+
             todo_change = TodoSchema(
                 title=title,
                 details=details,
@@ -477,6 +544,9 @@ class TodoService:
                 user_id=user.id,
             )
             updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "edit")
+            )
         try:
             await self._sync_todo_to_search_index(uow_session, todo_id)
         except Exception as e:
@@ -496,7 +566,7 @@ class TodoService:
             if not todo:
                 raise NotFoundException(f"Todo with id {todo_id} not found")
 
-            if todo.author_id != user.id:
+            if user.role != UserRole.ADMIN and todo.author_id != user.id:
                 raise ForbiddenException("Вы можете реферировать только свои задачи")
 
             summary = build_spacy_summary(todo.title, todo.details)
@@ -504,6 +574,10 @@ class TodoService:
                 todo_id=todo_id,
                 spacy_summary=summary,
                 user_id=user.id,
+            )
+            updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "spacy_summary")
             )
             return summary
 
@@ -517,7 +591,7 @@ class TodoService:
             todo = await uow_session.todo.get_todo_by_id(todo_id)
             if not todo:
                 raise NotFoundException(f"Todo with id {todo_id} not found")
-            if todo.author_id != user.id:
+            if user.role != UserRole.ADMIN and todo.author_id != user.id:
                 raise ForbiddenException("Вы можете реферировать только свои задачи")
 
             summary = await self._openrouter_service.generate_summary(todo.title, todo.details)
@@ -526,6 +600,10 @@ class TodoService:
                 todo_id=todo_id,
                 llm_summary=summary,
                 user_id=user.id,
+            )
+            updated_todo = await uow_session.todo.get_todo_by_id(todo_id)
+            await uow_session.todo.add_edit_history(
+                self._build_todo_history_entry(updated_todo, user.id, "llm_summary")
             )
             return summary
 
@@ -611,7 +689,7 @@ class TodoService:
 
             images = await uow_session.todo.get_all_image_paths()
 
-            if todo.author_id != user.id:
+            if user.role != UserRole.ADMIN and todo.author_id != user.id:
                 raise ForbiddenException("Вы можете редактировать только свои задачи")
 
         return todo, images

@@ -89,9 +89,11 @@ def _todos_page_context(
     created_to,
     tag,
     search_query: str | None = None,
+    search_tag: str | None = None,
     search_date_from: str | None = None,
     search_mode: str | None = None,
     subtitle: str | None = None,
+    total: int | None = None,
 ):
     current_user_role = request.state.user["role"]
     if hasattr(current_user_role, "value"):
@@ -109,9 +111,11 @@ def _todos_page_context(
         "creation_date_end": created_to,
         "tag": tag,
         "search_query": search_query,
+        "search_tag": search_tag,
         "search_date_from": search_date_from,
         "search_mode": search_mode,
         "subtitle": subtitle,
+        "total": total,
         "is_search_result": search_mode is not None,
         "current_user_id": int(request.state.user["user_id"]),
         "current_user_role": current_user_role,
@@ -243,9 +247,11 @@ async def get_todos(
             created_to=created_to,
             tag=tag,
             search_query=query,
+            search_tag=search_tag,
             search_date_from=search_date_from,
             search_mode=result["search_mode"],
             subtitle=result["subtitle"],
+            total=result["total"],
         ),
     )
 

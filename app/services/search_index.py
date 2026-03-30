@@ -341,11 +341,11 @@ def merge_search_hits_with_todos(
     но для полной информации о задаче нужны данные из PostgreSQL.
     Эта функция объединяет оба источника, дополняя результат поиска
     полными данными из БД и обогащая их для отображения"""
-    todos_by_id = {_get_value(todo, "id"): todo for todo in todos}
+    todos_by_id = {str(_get_value(todo, "id")): todo for todo in todos}
     merged: list[dict[str, Any]] = []
 
     for hit in hits:
-        todo_id = hit.get("todo_id")
+        todo_id = str(hit.get("todo_id"))
         todo = todos_by_id.get(todo_id)
         if todo is None:
             continue

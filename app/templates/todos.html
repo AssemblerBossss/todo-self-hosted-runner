@@ -55,6 +55,8 @@
     <div class="card-body">
         <form action="/todo/list/" method="get"  class="mb-3">
             <div class="input-group">
+                <input type="hidden" name="skip" value="0">
+                <input type="hidden" name="limit" value="{{ limit }}">
                 <input type="text"
                        name="query"
                        class="form-control"
@@ -71,6 +73,8 @@
 
         <form action="/todo/list/" method="get" class="mb-3">
             <div class="input-group">
+                <input type="hidden" name="skip" value="0">
+                <input type="hidden" name="limit" value="{{ limit }}">
                 <input type="datetime-local"
                        name="search_date_from"
                        class="form-control"
@@ -93,7 +97,7 @@
 
         {% if subtitle %}
         <div class="alert alert-info mt-3 mb-0">
-            {{ subtitle }}. Найдено: <strong>{{ todos|length }}</strong>
+            {{ subtitle }}. Найдено: <strong>{{ total if total is not none else todos|length }}</strong>
         </div>
         {% endif %}
     </div>
@@ -263,7 +267,7 @@
                data-todo-id="{{ todo.id }}" data-todo-title="{{ todo.title }}"
                data-todo-details="{{ todo.details }}" data-todo-tag="{{ todo.tag }}" data-todo-date="{{ todo.created_at }}"
                data-todo-image="{{ todo.image_path }}"
-               data-can-edit="{% if todo.author_id == current_user_id %}true{% else %}false{% endif %}"
+               data-can-edit="{% if current_user_role == 'admin' or todo.author_id == current_user_id %}true{% else %}false{% endif %}"
                {% if todo.completed %}checked{% endif %}>
     </div>
 
@@ -272,7 +276,7 @@
            href="/todo/edit/{{ todo.id }}/?limit={{ limit }}&skip={{ page }}"
            data-todo-id="{{ todo.id }}"
            data-todo-title="{{ todo.title }}"
-           data-can-edit="{% if todo.author_id == current_user_id %}true{% else %}false{% endif %}">Редактировать</a>
+           data-can-edit="{% if current_user_role == 'admin' or todo.author_id == current_user_id %}true{% else %}false{% endif %}">Редактировать</a>
         <button class="btn btn-danger deleteButton" href="#"
                 data-todo-id="{{ todo.id }}"
                 data-todo-title="{{ todo.title }}"
@@ -323,22 +327,18 @@
 
 <div class="d-flex justify-content-between align-items-center">
 
-    {% if not is_search_result %}
     <nav>
         <ul class="pagination">
             {% for i in range(pages) %}
             <li class="page-item {% if i == page %}active{% endif %}">
                 <a class="page-link"
-                   href="/todo/list/?limit={{ limit }}&skip={{ i }}{% if tag is not none %}&tag={{ tag.value }}{% endif %}{% if creation_date_start is not none %}&creation_date_start={{ creation_date_start.strftime('%Y-%m-%d') }}{% endif %}{% if creation_date_end is not none %}&creation_date_end={{ creation_date_end.strftime('%Y-%m-%d') }}{% endif %}">
+                   href="/todo/list/?limit={{ limit }}&skip={{ i }}{% if tag %}&tag={{ tag }}{% endif %}{% if creation_date_start %}&created_from={{ creation_date_start }}{% endif %}{% if creation_date_end %}&created_to={{ creation_date_end }}{% endif %}{% if search_query %}&query={{ search_query|urlencode }}{% endif %}{% if search_tag %}&search_tag={{ search_tag|urlencode }}{% endif %}{% if search_date_from %}&search_date_from={{ search_date_from|urlencode }}{% endif %}">
                     {{ i + 1 }}
                 </a>
             </li>
             {% endfor %}
         </ul>
     </nav>
-    {% else %}
-    <div></div>
-    {% endif %}
 
     <div class="dropdown">
         <button class="btn btn-danger dropdown-toggle px-4" type="button" onclick="toggleDeleteOptions()">
@@ -668,7 +668,7 @@
             const colors = ['primary', 'success', 'warning', 'info', 'danger', 'secondary'];
             (data.tags || []).forEach((tag, i) => {
                 const a = document.createElement('a');
-                a.href = `/todo/list/?search_tag=${encodeURIComponent(tag)}`;
+                a.href = `/todo/list/?skip=0&limit=${encodeURIComponent(String({{ limit }}))}&search_tag=${encodeURIComponent(tag)}`;
                 a.className = `btn btn-sm btn-outline-${colors[i % colors.length]}`;
                 a.textContent = tag;
                 container.appendChild(a);

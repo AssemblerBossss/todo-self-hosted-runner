@@ -177,7 +177,7 @@ class ElasticRepository:
         limit: int = 50,
         skip: int = 0,
         author_id: int | None = None,
-    ) -> list[dict]:
+    ) -> dict:
 
         """
         Полнотекстовый поиск по title и details с нестрогим соответствием.
@@ -245,7 +245,7 @@ class ElasticRepository:
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
-                    "from": skip,
+                    "from": skip * limit,
                     "size": limit,
                     "query": {
                         "bool": {
@@ -284,12 +284,13 @@ class ElasticRepository:
                     result["highlight"] = hit["highlight"]
                 results.append(result)
 
+            total = response["hits"]["total"]["value"]
             logger.info("Search for '%s' found %d results", query_text, len(results))
-            return results
+            return {"items": results, "total": total}
 
         except Exception as e:
             logger.error("Search failed: %s", e)
-            return []
+            return {"items": [], "total": 0}
 
     async def search_by_classification(
         self, classification: str, limit: int = 50
@@ -350,8 +351,10 @@ class ElasticRepository:
     async def search_by_date(
         self,
         date_from: str,
+        limit: int = 50,
+        skip: int = 0,
         author_id: int| None= None,
-    ) -> list[dict]:
+    ) -> dict:
         """Возвращает все тудушки, созданные после указанной даты"""
         try:
             must_filters = [{"range": {"created_at": {"gte": date_from}}}]
@@ -360,21 +363,28 @@ class ElasticRepository:
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
+                    "from": skip * limit,
+                    "size": limit,
                     "query": {"bool": {"filter": must_filters}},
                     "sort": [{"created_at": {"order": "desc"}}],
                 },
             )
 
-            return [hit["_source"] for hit in response["hits"]["hits"]]
+            return {
+                "items": [hit["_source"] for hit in response["hits"]["hits"]],
+                "total": response["hits"]["total"]["value"],
+            }
         except Exception as e:
             logger.error( "Failed to get search results: %s", e)
-            return []
+            return {"items": [], "total": 0}
 
     async def search_by_tag(
         self,
         tag: str,
+        limit: int = 50,
+        skip: int = 0,
         author_id: int | None = None,
-    ) -> list[dict]:
+    ) -> dict:
         """Возвращает все тудушки с заданным тегом"""
         try:
             filters = [{"term": {"tag": tag}}]
@@ -383,15 +393,20 @@ class ElasticRepository:
             response = await self._client.search(
                 index=INDEX_NAME,
                 body={
+                    "from": skip * limit,
+                    "size": limit,
                     "query": {"bool": {"filter": filters}},
                     "sort": [{"created_at": {"order": "desc"}}],
                 },
             )
 
-            return [hit["_source"] for hit in response["hits"]["hits"]]
+            return {
+                "items": [hit["_source"] for hit in response["hits"]["hits"]],
+                "total": response["hits"]["total"]["value"],
+            }
         except Exception as e:
             logger.error( "Failed to get search results: %s", e)
-            return []
+            return {"items": [], "total": 0}
 
     async def get_all_todos(
         self,
