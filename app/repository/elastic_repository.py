@@ -285,19 +285,15 @@ class ElasticRepository:
         self, classification: str, limit: int = 50
     ) -> list[dict]:
         """Поиск тудушек по уровню секретности"""
-        try:
-            response = await self._client.search(
-                index=INDEX_NAME,
-                body={
-                    "size": limit,
-                    "query": {"term": {"classification_level": classification}},
-                    "sort": [{"created_at": {"order": "desc"}}],
-                },
-            )
-            return [hit["_source"] for hit in response["hits"]["hits"]]
-        except Exception as e:
-            logger.error("Search by classification failed: %s", e)
-            return []
+        response = await self._client.search(
+            index=INDEX_NAME,
+            body={
+                "size": limit,
+                "query": {"term": {"classification_level": classification}},
+                "sort": [{"created_at": {"order": "desc"}}],
+            },
+        )
+        return [hit["_source"] for hit in response["hits"]["hits"]]
 
     async def get_statistics(self) -> dict:
         """Получает статистику по индексу"""
