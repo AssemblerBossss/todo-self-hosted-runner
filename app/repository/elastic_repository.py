@@ -335,27 +335,22 @@ class ElasticRepository:
         author_id: int| None= None,
     ) -> dict:
         """Возвращает все тудушки, созданные после указанной даты"""
-        try:
-            must_filters = [{"range": {"created_at": {"gte": date_from}}}]
-            if author_id is not None:
-                must_filters.append({"term": {"author_id": author_id}})
-            response = await self._client.search(
-                index=INDEX_NAME,
-                body={
-                    "from": skip * limit,
-                    "size": limit,
-                    "query": {"bool": {"filter": must_filters}},
-                    "sort": [{"created_at": {"order": "desc"}}],
-                },
-            )
-
-            return {
-                "items": [hit["_source"] for hit in response["hits"]["hits"]],
-                "total": response["hits"]["total"]["value"],
-            }
-        except Exception as e:
-            logger.error( "Failed to get search results: %s", e)
-            return {"items": [], "total": 0}
+        must_filters = [{"range": {"created_at": {"gte": date_from}}}]
+        if author_id is not None:
+            must_filters.append({"term": {"author_id": author_id}})
+        response = await self._client.search(
+            index=INDEX_NAME,
+            body={
+                "from": skip * limit,
+                "size": limit,
+                "query": {"bool": {"filter": must_filters}},
+                "sort": [{"created_at": {"order": "desc"}}],
+            },
+        )
+        return {
+            "items": [hit["_source"] for hit in response["hits"]["hits"]],
+            "total": response["hits"]["total"]["value"],
+        }
 
     async def search_by_tag(
         self,
