@@ -360,27 +360,22 @@ class ElasticRepository:
         author_id: int | None = None,
     ) -> dict:
         """Возвращает все тудушки с заданным тегом"""
-        try:
-            filters = [{"term": {"tag": tag}}]
-            if author_id is not None:
-                filters.append({"term": {"author_id": author_id}})
-            response = await self._client.search(
-                index=INDEX_NAME,
-                body={
-                    "from": skip * limit,
-                    "size": limit,
-                    "query": {"bool": {"filter": filters}},
-                    "sort": [{"created_at": {"order": "desc"}}],
-                },
-            )
-
-            return {
-                "items": [hit["_source"] for hit in response["hits"]["hits"]],
-                "total": response["hits"]["total"]["value"],
-            }
-        except Exception as e:
-            logger.error( "Failed to get search results: %s", e)
-            return {"items": [], "total": 0}
+        filters = [{"term": {"tag": tag}}]
+        if author_id is not None:
+            filters.append({"term": {"author_id": author_id}})
+        response = await self._client.search(
+            index=INDEX_NAME,
+            body={
+                "from": skip * limit,
+                "size": limit,
+                "query": {"bool": {"filter": filters}},
+                "sort": [{"created_at": {"order": "desc"}}],
+            },
+        )
+        return {
+            "items": [hit["_source"] for hit in response["hits"]["hits"]],
+            "total": response["hits"]["total"]["value"],
+        }
 
     async def get_all_todos(
         self,
