@@ -572,15 +572,6 @@ class ElasticRepository:
             }
             await self._client.indices.create(index=self.TAGS_INDEX, body=mapping)
             logger.info("Tags index created.")
-            from datetime import datetime as _dt
-            for name in ["Учёба", "Личное", "Планы"]:
-                await self._client.index(
-                    index=self.TAGS_INDEX,
-                    id=name.lower(),
-                    document={"name": name, "created_at": _dt.now().isoformat()},
-                )
-            # Принудительный refresh чтобы теги сразу были видны в поиске
-            await self._client.indices.refresh(index=self.TAGS_INDEX)
 
     async def get_all_tags(self) -> list[str]:
         """Возвращает все теги по алфавиту."""
@@ -593,35 +584,27 @@ class ElasticRepository:
 
     async def create_tag(self, name: str) -> bool:
         """Создаёт тег. Возвращает False если тег уже существует."""
-        try:
-            await self._ensure_tags_index()
-            name = name.strip()
-            doc_id = name.lower()
-            exists = await self._client.exists(index=self.TAGS_INDEX, id=doc_id)
-            if exists:
-                return False
-            from datetime import datetime as _dt
-            await self._client.index(
-                index=self.TAGS_INDEX,
-                id=doc_id,
-                document={"name": name, "created_at": _dt.now().isoformat()},
-            )
-            await self._client.indices.refresh(index=self.TAGS_INDEX)
-            return True
-        except Exception as e:
-            logger.error("Failed to create tag '%s': %s", name, e)
+        await self._ensure_tags_index()
+        doc_id = name.lower()
+        exists = await self._client.exists(index=self.TAGS_INDEX, id=doc_id)
+        if exists:
             return False
+        from datetime import datetime as _dt
+        await self._client.index(
+            index=self.TAGS_INDEX,
+            id=doc_id,
+            document={"name": name, "created_at": _dt.now().isoformat()},
+        )
+        await self._client.indices.refresh(index=self.TAGS_INDEX)
+        return True
 
     async def delete_tag(self, name: str) -> bool:
         """Удаляет тег. Возвращает False если тег не найден."""
+        await self._ensure_tags_index()
         try:
-            await self._ensure_tags_index()
             await self._client.delete(index=self.TAGS_INDEX, id=name.lower().strip())
             return True
         except NotFoundError:
-            return False
-        except Exception as e:
-            logger.error("Failed to delete tag '%s': %s", name, e)
             return False
 
     async def suggest_tags(self, query: str, limit: int = 10) -> list[str]:
