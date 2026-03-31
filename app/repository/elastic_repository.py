@@ -397,45 +397,38 @@ class ElasticRepository:
         return [hit["_source"] for hit in response["hits"]["hits"]]
 
     async def get_top_words(self, limit: int = 10, author_id: int | None = None):
-        try:
-            query = {"match_all": {}} if author_id is None else {"term": {"author_id": author_id}}
-            response = await self._client.search(
-                index=INDEX_NAME,
-                body={
-                    "size": 0,
-                    "query": query,
-                    "aggs": {
-                        "top_title": {"terms": {"field": "title.agg", "size": limit}},
-                        "top_details": {
-                            "terms": {"field": "details.agg", "size": limit}
-                        },
+        query = {"match_all": {}} if author_id is None else {"term": {"author_id": author_id}}
+        response = await self._client.search(
+            index=INDEX_NAME,
+            body={
+                "size": 0,
+                "query": query,
+                "aggs": {
+                    "top_title": {"terms": {"field": "title.agg", "size": limit}},
+                    "top_details": {
+                        "terms": {"field": "details.agg", "size": limit}
                     },
                 },
+            },
+        )
+
+        words_counter = {}
+        aggs = response.get("aggregations", {})
+
+        for bucket in aggs.get("top_title", {}).get("buckets", []):
+            words_counter[bucket["key"]] = bucket["doc_count"]
+
+        for bucket in aggs.get("top_details", {}).get("buckets", []):
+            words_counter[bucket["key"]] = (
+                words_counter.get(bucket["key"], 0) + bucket["doc_count"]
             )
 
-            words_counter = {}
-
-            aggs = response.get("aggregations", {})
-
-            for bucket in aggs.get("top_title", {}).get("buckets", []):
-                words_counter[bucket["key"]] = bucket["doc_count"]
-
-            for bucket in aggs.get("top_details", {}).get("buckets", []):
-                words_counter[bucket["key"]] = (
-                    words_counter.get(bucket["key"], 0) + bucket["doc_count"]
-                )
-
-            sorted_words = sorted(
-                words_counter.items(), key=lambda x: x[1], reverse=True
-            )
-
-            return [
-                {"word": word, "count": count} for word, count in sorted_words[:limit]
-            ]
-
-        except Exception as e:
-            logger.error("Failed to get top words: %s", e)
-            return []
+        sorted_words = sorted(
+            words_counter.items(), key=lambda x: x[1], reverse=True
+        )
+        return [
+            {"word": word, "count": count} for word, count in sorted_words[:limit]
+        ]
 
     _INTERVAL_FORMATS = {
         "day": "yyyy-MM-dd",
