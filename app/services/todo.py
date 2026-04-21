@@ -313,6 +313,32 @@ class TodoService:
                 raise SearchSyncException("Не удалось синхронизировать задачу с Elasticsearch.") from exc
             uow_session.add_compensation(uow_session.elastic.delete_todo, todo.id)
 
+    async def create_from_gitlab_issues(
+        self,
+        uow_session: UnitOfWork,
+        issues: list[dict],
+        author_id: int,
+    ) -> None:
+        """Создаёт todo из списка GitLab issue."""
+        for issue in issues:
+            details = (issue.get("description") or "")[:TODO_DETAILS_MAX_LENGTH]
+            due_at = None
+            if raw := issue.get("created_at"):
+                try:
+                    due_at = datetime.fromisoformat(raw.rstrip("Z"))
+                except ValueError:
+                    pass
+            await self.create(
+                uow_session=uow_session,
+                title=issue.get("title", ""),
+                details=details,
+                tag="GitLab",
+                source=TodoSource.imported,
+                image=None,
+                author_id=author_id,
+                due_at=due_at,
+            )
+
     async def get_todos_page(
         self,
         uow_session: UnitOfWork,

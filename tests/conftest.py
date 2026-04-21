@@ -45,7 +45,10 @@ def _make_mock_elastic_repo():
 @pytest.fixture(autouse=True, scope="session")
 def mock_elastic():
     mock_repo = _make_mock_elastic_repo()
-    with patch.object(UnitOfWork, "elastic", new_callable=PropertyMock, return_value=mock_repo):
+    with (
+        patch.object(UnitOfWork, "elastic", new_callable=PropertyMock, return_value=mock_repo),
+        patch("app.repository.elastic_repository.ElasticRepository.ensure_index_exists", new=AsyncMock()),
+    ):
         yield
 
 

@@ -1,9 +1,12 @@
+import asyncio
 import logging
 import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
+
+import httpx
 from fastapi import (
     APIRouter,
     Request,
@@ -714,6 +717,90 @@ async def import_log_file(filename: str):
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+GITLAB_PER_PAGE = 100
+GITLAB_PARALLEL_WORKERS = 5
+
+
+async def _fetch_gitlab_page(
+    client: httpx.AsyncClient,
+    base_url: str,
+    token: str,
+    page: int,
+) -> list[dict]:
+    resp = await client.get(
+        base_url,
+        headers={"PRIVATE-TOKEN": token},
+        params={"per_page": GITLAB_PER_PAGE, "page": page, "state": "opened"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+@todo_router.post("/import-issues/", status_code=status.HTTP_200_OK)
+async def import_issues(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+    user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    gitlab_url: str = Form(...),
+    token: str = Form(...),
+):
+    """Последовательно скачивает все issue из GitLab через пагинацию."""
+    all_issues: list[dict] = []
+    page = 1
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            batch = await _fetch_gitlab_page(client, gitlab_url, token, page)
+            if not batch:
+                break
+            all_issues.extend(batch)
+            page += 1
+
+    await todo_service.create_from_gitlab_issues(
+        uow_session=uow_session,
+        issues=all_issues,
+        author_id=user.id,
+    )
+    return {"status": "success", "imported": len(all_issues)}
+
+
+@todo_router.post("/import-issues-parallel/", status_code=status.HTTP_200_OK)
+async def import_issues_parallel(
+    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+    todo_service: Annotated[TodoService, Depends(get_todo_service)],
+    user: Annotated[SUserInfo, Depends(get_current_active_user)],
+    gitlab_url: str = Form(...),
+    token: str = Form(...),
+):
+    """Параллельно скачивает все issue из GitLab через asyncio + семафор."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            gitlab_url,
+            headers={"PRIVATE-TOKEN": token},
+            params={"per_page": GITLAB_PER_PAGE, "page": 1, "state": "opened"},
+        )
+        resp.raise_for_status()
+        total_pages = int(resp.headers.get("x-total-pages", 1))
+        first_batch: list[dict] = resp.json()
+
+        semaphore = asyncio.Semaphore(GITLAB_PARALLEL_WORKERS)
+
+        async def fetch_limited(page: int) -> list[dict]:
+            async with semaphore:
+                return await _fetch_gitlab_page(client, gitlab_url, token, page)
+
+        remaining = await asyncio.gather(
+            *[fetch_limited(p) for p in range(2, total_pages + 1)]
+        )
+
+    all_issues = first_batch + [issue for batch in remaining for issue in batch]
+    await todo_service.create_from_gitlab_issues(
+        uow_session=uow_session,
+        issues=all_issues,
+        author_id=user.id,
+    )
+    return {"status": "success", "imported": len(all_issues)}
 
 
 @todo_router.post("/export/", response_class=FileResponse)

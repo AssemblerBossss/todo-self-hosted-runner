@@ -87,6 +87,48 @@ jobs:
           ELASTICSEARCH_HOST: http://localhost:9200
         run: pytest tests -v --tb=short
 
+  test-gitlab-import:
+    name: GitLab Import Performance Test
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run GitLab import performance tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          ELASTICSEARCH_HOST: http://localhost:9200
+        run: pytest tests/test_gitlab_import.py -v --tb=short -s
+
   build:
     name: Build & Push Docker image
     runs-on: ubuntu-latest
