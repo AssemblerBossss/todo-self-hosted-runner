@@ -1,5 +1,6 @@
 import asyncio
 from typing import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -25,6 +26,27 @@ async def override_get_async_uow_session() -> UnitOfWork:
 
 
 app.dependency_overrides[get_async_uow_session] = override_get_async_uow_session
+
+
+def _make_mock_elastic_repo():
+    mock_repo = MagicMock()
+    mock_repo.ensure_index_exists = AsyncMock()
+    mock_repo.index_document = AsyncMock()
+    mock_repo.delete_todo = AsyncMock()
+    mock_repo.delete_todos_by_ids = AsyncMock()
+    mock_repo.search_todos = AsyncMock(return_value=[])
+    mock_repo.search_by_tag = AsyncMock(return_value=[])
+    mock_repo.search_by_date = AsyncMock(return_value=[])
+    mock_repo.get_all_tags = AsyncMock(return_value=[])
+    mock_repo.get_notes_per_day_by_user = AsyncMock(return_value=[])
+    return mock_repo
+
+
+@pytest.fixture(autouse=True, scope="session")
+def mock_elastic():
+    mock_repo = _make_mock_elastic_repo()
+    with patch.object(UnitOfWork, "elastic", new_callable=PropertyMock, return_value=mock_repo):
+        yield
 
 
 @pytest.fixture(autouse=True, scope='session')
