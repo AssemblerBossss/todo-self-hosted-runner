@@ -117,22 +117,22 @@ jobs:
             ghcr.io/${{ github.repository | lower }}:${{ github.sha }}
 
   deploy:
-      name: Deploy on self-hosted
-      runs-on: self-hosted
-      needs: build
-      if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    name: Deploy on self-hosted
+    runs-on: self-hosted
+    needs: build
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
 
-      steps:
-        - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Log in to GHCR
-          run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-        - name: Stop old containers
-          run: docker compose down || true
+      - name: Stop old containers
+        run: docker compose down || true
 
-        - name: Pull latest image
-          run: docker pull ghcr.io/${{ github.repository | lower }}:latest
+      - name: Pull latest image
+        run: docker pull ghcr.io/${{ github.repository | lower }}:latest
 
-        - name: Start containers
-          run: docker compose up -d
+      - name: Start containers
+        run: docker compose up -d
