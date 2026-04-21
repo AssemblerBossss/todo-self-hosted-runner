@@ -8,7 +8,7 @@ def test_build_spacy_summary_returns_short_text_without_spacy_dependency():
         summary = build_spacy_summary(
             "Подготовить отчёт",
             (
-                "Отчёт по продажам нужен сегодня. Отчёт должен включать квартальные данные. "
+                "Отчёт по продажам за квартал нужен сегодня. Отчёт должен включать квартальные данные. "
                 "Выделить ключевые отклонения и риски. "
                 "Подготовить краткие выводы для команды."
             ),
@@ -16,6 +16,6 @@ def test_build_spacy_summary_returns_short_text_without_spacy_dependency():
         )
 
     assert summary
-    assert "Отчёт по продажам нужен сегодня." in summary
+    assert "Отчёт по продажам за квартал нужен сегодня." in summary
     assert "Подготовить краткие выводы для команды." not in summary
     assert len(summary) > 60
