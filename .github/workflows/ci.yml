@@ -168,6 +168,9 @@ jobs:
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
 
     steps:
+      - name: Fix permissions for Docker-created directories
+        run: sudo chown -R $USER:$USER $GITHUB_WORKSPACE || true
+
       - uses: actions/checkout@v4
 
       - name: Set image name
