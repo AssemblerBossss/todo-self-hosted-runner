@@ -62,7 +62,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - ./data/elasticsearch:/usr/share/elasticsearch/data
+      - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       - app-network
     ports:
@@ -99,5 +99,7 @@ networks:
 
 volumes:
   postgres_data_8:
+  elasticsearch_data:
+
 
 

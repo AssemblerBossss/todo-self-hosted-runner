@@ -30,8 +30,8 @@ async def user_client(ac: AsyncClient) -> AsyncClient:
     return ac
 
 
-MOCK_ISSUES = [{"title": f"Issue {i}", "description": f"desc {i}", "created_at": None} for i in range(300)]
-_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 300, 100)]  # 3 страницы по 100
+MOCK_ISSUES = [{"title": f"Issue {i}", "description": f"desc {i}", "created_at": None} for i in range(2000)]
+_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 2000, 100)]  # 20 страниц по 100
 
 
 def _make_mock_response(page: int) -> MagicMock:
@@ -64,7 +64,7 @@ async def test_import_issues_sequential_works(user_client: AsyncClient):
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
-    assert resp.json()["imported"] == 300
+    assert resp.json()["imported"] == 2000
     assert call_order == sorted(call_order), "последовательная ручка должна обходить страницы по порядку"
 
 
@@ -88,7 +88,7 @@ async def test_import_issues_parallel_works(user_client: AsyncClient):
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
-    assert resp.json()["imported"] == 300
+    assert resp.json()["imported"] == 2000
 
 
 @pytest.mark.asyncio(loop_scope="session")
