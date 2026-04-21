@@ -7,7 +7,30 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
+
+from app.main import app
+
+@pytest.fixture(scope="module")
+async def user_client(ac: AsyncClient) -> AsyncClient:
+    await ac.post(
+        "/auth/register",
+        json={
+            "email": "gitlab_user@example.com",
+            "password": "password123",
+            "confirm_password": "password123",
+            "first_name": "Git",
+            "last_name": "Lab",
+        },
+        follow_redirects=False,
+    )
+    await ac.post(
+        "/auth/token",
+        json={"email": "gitlab_user@example.com", "password": "password123"},
+        follow_redirects=False,
+    )
+    return ac
+
 
 MOCK_ISSUES = [{"title": f"Issue {i}", "description": f"desc {i}", "created_at": None} for i in range(300)]
 _PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 300, 100)]  # 3 страницы по 100
