@@ -7,9 +7,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient, ASGITransport
-
-from app.main import app
+from httpx import AsyncClient
 
 @pytest.fixture(scope="module")
 async def user_client(ac: AsyncClient) -> AsyncClient:
