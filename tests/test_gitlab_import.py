@@ -31,13 +31,17 @@ async def user_client(ac: AsyncClient) -> AsyncClient:
 
 
 MOCK_ISSUES = [{"title": f"Issue {i}", "description": f"desc {i}", "created_at": None} for i in range(2000)]
-_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 2000, 100)]
+_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 2000, 100)]  # 20 страниц по 100
 
 
 def _make_mock_response(page: int) -> MagicMock:
     mock = MagicMock()
     mock.raise_for_status = MagicMock()
-    mock.json.return_value = _PAGES[page - 1] if 1 <= page <= len(_PAGES) else []
+    # Возвращаем данные для запрошенной страницы
+    if 1 <= page <= len(_PAGES):
+        mock.json.return_value = _PAGES[page - 1]
+    else:
+        mock.json.return_value = []  # пустая страница = конец пагинации
     mock.headers = {"x-total-pages": str(len(_PAGES))}
     return mock
 
@@ -53,7 +57,7 @@ async def test_import_issues_sequential_works(user_client: AsyncClient):
     async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
         call_order.append(page)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.005)  # минимальная задержка
         return _make_mock_response(page)
 
     with (
@@ -68,14 +72,14 @@ async def test_import_issues_sequential_works(user_client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
     assert resp.json()["imported"] == 2000
-    assert call_order == sorted(call_order)
+    assert call_order == list(range(1, 21))  # страницы 1..20 по порядку
 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_import_issues_parallel_works(user_client: AsyncClient):
     async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.005)
         return _make_mock_response(page)
 
     with (
@@ -94,7 +98,9 @@ async def test_import_issues_parallel_works(user_client: AsyncClient):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_parallel_import_faster_than_sequential(user_client: AsyncClient):
-    delay = 0.03
+    """Параллельная ручка должна быть быстрее последовательной."""
+    # 🔥 Увеличиваем задержку, чтобы разница была заметна
+    delay = 0.08  # 80мс на страницу × 20 страниц = 1.6с последовательно, ~0.3с параллельно
 
     async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
@@ -124,4 +130,7 @@ async def test_parallel_import_faster_than_sequential(user_client: AsyncClient):
         t_parallel = time.monotonic() - t0
 
     print(f"\nsequential={t_sequential:.3f}s  parallel={t_parallel:.3f}s")
-    assert t_parallel < t_sequential * 0.9
+    assert t_parallel < t_sequential * 0.6, (
+        f"Параллельная ручка ({t_parallel:.3f}s) должна быть быстрее "
+        f"последовательной ({t_sequential:.3f}s)"
+    )
