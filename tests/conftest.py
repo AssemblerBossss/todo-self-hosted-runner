@@ -77,6 +77,29 @@ async def ac() -> AsyncGenerator[AsyncClient, None]:
         yield ac
 
 
+
+@pytest.fixture(scope="module")
+async def user_client(ac: AsyncClient) -> AsyncClient:
+    """Фикстура для авторизованного клиента — доступна всем тестам."""
+    await ac.post(
+        "/auth/register",
+        json={
+            "email": "gitlab_user@example.com",
+            "password": "password123",
+            "confirm_password": "password123",
+            "first_name": "Git",
+            "last_name": "Lab",
+        },
+        follow_redirects=False,
+    )
+    await ac.post(
+        "/auth/token",
+        json={"email": "gitlab_user@example.com", "password": "password123"},
+        follow_redirects=False,
+    )
+    return ac
+
+
 @pytest.fixture(scope="session")
 def gitlab_test_config():
     """Конфигурация для тестов с реальным GitLab API."""
@@ -84,5 +107,5 @@ def gitlab_test_config():
         "project_url": os.getenv("TEST_GITLAB_PROJECT", "https://gitlab.com/gitlab-org/gitlab"),
         "project_id": os.getenv("TEST_GITLAB_PROJECT_ID", "278964"),
         "api_token": os.getenv("GITLAB_TOKEN", ""),
-        "max_issues": 2000,
+        "max_issues": int(os.getenv("TEST_GITLAB_MAX_ISSUES", "500")),
     }
