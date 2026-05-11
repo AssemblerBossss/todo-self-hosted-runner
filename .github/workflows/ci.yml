@@ -110,7 +110,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -119,7 +118,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run GitLab import performance tests (mocked)
+      - name: Run mocked GitLab import tests
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -127,10 +126,10 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           ELASTICSEARCH_HOST: http://localhost:9200
-        # Сначала запускаем тесты с моками — они быстрые и стабильные
         run: pytest tests/test_gitlab_import.py -v --tb=short -s
 
       - name: Run real GitLab integration tests (optional)
+        if: vars.ENABLE_REAL_GITLAB_TESTS == 'true'
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -138,13 +137,14 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           ELASTICSEARCH_HOST: http://localhost:9200
-          TEST_GITLAB_PROJECT: "https://gitlab.com/gitlab-org/gitlab"
-          TEST_GITLAB_PROJECT_ID: "278964"
-          TEST_GITLAB_MAX_ISSUES: "50"  # лимит для ускорения
-        # Запускаем только если явно включено через secret/variable
-        if: vars.ENABLE_REAL_GITLAB_TESTS == 'true'
+          ENABLE_REAL_GITLAB_TESTS: "1"
+          TEST_GITLAB_URL: "https://gitlab.com/gitlab-org/gitlab/-/issues"
+          TEST_GITLAB_MAX_ISSUES: "20"
+          TEST_GITLAB_TIMEOUT: "60"
         run: pytest tests/test_gitlab_import_real.py -v --tb=short -s -m integration
-        continue-on-error: true  # не блокировать пайплайн, если реальный API недоступен
+        continue-on-error: true
+        timeout-minutes: 5
+
   build:
     name: Build & Push Docker image
     runs-on: ubuntu-latest

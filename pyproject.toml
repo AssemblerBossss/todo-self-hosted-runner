@@ -10,5 +10,8 @@ ignore = ["E501"]
 pythonpath = [
   ".", "app",
 ]
+markers = [
+    "integration: marks tests as integration tests (run with -m integration)",
+]
 asyncio_mode="auto"
 asyncio_default_fixture_loop_scope="session"

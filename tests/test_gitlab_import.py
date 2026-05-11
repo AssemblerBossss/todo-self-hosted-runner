@@ -31,7 +31,7 @@ async def user_client(ac: AsyncClient) -> AsyncClient:
 
 
 MOCK_ISSUES = [{"title": f"Issue {i}", "description": f"desc {i}", "created_at": None} for i in range(2000)]
-_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 2000, 100)]  # 20 страниц по 100
+_PAGES = [MOCK_ISSUES[i : i + 100] for i in range(0, 2000, 100)]
 
 
 def _make_mock_response(page: int) -> MagicMock:
@@ -42,48 +42,49 @@ def _make_mock_response(page: int) -> MagicMock:
     return mock
 
 
+# 🔥 Патчим там, где httpx ИСПОЛЬЗУЕТСЯ (в todo_router)
+GITLAB_GET_PATH = "app.routers.api.todo_router.httpx.AsyncClient.get"
+
+
 @pytest.mark.asyncio(loop_scope="session")
 async def test_import_issues_sequential_works(user_client: AsyncClient):
-    """Последовательная ручка возвращает 200 и корректное число импортированных."""
     call_order = []
 
     async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
         call_order.append(page)
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.01)
         return _make_mock_response(page)
 
     with (
-        patch("httpx.AsyncClient.get", side_effect=fake_get),
+        patch(GITLAB_GET_PATH, side_effect=fake_get),
         patch("app.services.todo.TodoService.create_from_gitlab_issues", new=AsyncMock()),
     ):
         resp = await user_client.post(
             "/todo/import-issues/",
-            data={"gitlab_url": "http://fake-gitlab/issues", "token": "tok"},
+            data={"gitlab_url": "https://gitlab.com/fake/project/-/issues", "token": "tok"},
         )
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
     assert resp.json()["imported"] == 2000
-    assert call_order == sorted(call_order), "последовательная ручка должна обходить страницы по порядку"
+    assert call_order == sorted(call_order)
 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_import_issues_parallel_works(user_client: AsyncClient):
-    """Параллельная ручка возвращает 200 и корректное число импортированных."""
-
     async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.01)
         return _make_mock_response(page)
 
     with (
-        patch("httpx.AsyncClient.get", side_effect=fake_get),
+        patch(GITLAB_GET_PATH, side_effect=fake_get),
         patch("app.services.todo.TodoService.create_from_gitlab_issues", new=AsyncMock()),
     ):
         resp = await user_client.post(
             "/todo/import-issues-parallel/",
-            data={"gitlab_url": "http://fake-gitlab/issues", "token": "tok"},
+            data={"gitlab_url": "https://gitlab.com/fake/project/-/issues", "token": "tok"},
         )
 
     assert resp.status_code == 200
@@ -93,43 +94,34 @@ async def test_import_issues_parallel_works(user_client: AsyncClient):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_parallel_import_faster_than_sequential(user_client: AsyncClient):
-    """Параллельная ручка должна быть быстрее последовательной."""
-    delay = 0.05  # имитация сетевой задержки на страницу
+    delay = 0.03
 
-    async def fake_get_seq(url, **kwargs):
-        page = kwargs.get("params", {}).get("page", 1)
-        await asyncio.sleep(delay)
-        return _make_mock_response(page)
-
-    async def fake_get_par(url, **kwargs):
+    async def fake_get(url, **kwargs):
         page = kwargs.get("params", {}).get("page", 1)
         await asyncio.sleep(delay)
         return _make_mock_response(page)
 
     with (
         patch("app.services.todo.TodoService.create_from_gitlab_issues", new=AsyncMock()),
-        patch("httpx.AsyncClient.get", side_effect=fake_get_seq),
+        patch(GITLAB_GET_PATH, side_effect=fake_get),
     ):
         t0 = time.monotonic()
         await user_client.post(
             "/todo/import-issues/",
-            data={"gitlab_url": "http://fake", "token": "tok"},
+            data={"gitlab_url": "https://gitlab.com/fake/project/-/issues", "token": "tok"},
         )
         t_sequential = time.monotonic() - t0
 
     with (
         patch("app.services.todo.TodoService.create_from_gitlab_issues", new=AsyncMock()),
-        patch("httpx.AsyncClient.get", side_effect=fake_get_par),
+        patch(GITLAB_GET_PATH, side_effect=fake_get),
     ):
         t0 = time.monotonic()
         await user_client.post(
             "/todo/import-issues-parallel/",
-            data={"gitlab_url": "http://fake", "token": "tok"},
+            data={"gitlab_url": "https://gitlab.com/fake/project/-/issues", "token": "tok"},
         )
         t_parallel = time.monotonic() - t0
 
     print(f"\nsequential={t_sequential:.3f}s  parallel={t_parallel:.3f}s")
-    assert t_parallel < t_sequential, (
-        f"Параллельная ручка ({t_parallel:.3f}s) должна быть быстрее "
-        f"последовательной ({t_sequential:.3f}s)"
-    )
+    assert t_parallel < t_sequential * 0.9
