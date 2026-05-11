@@ -77,22 +77,6 @@ services:
       start_period: 60s
 
 
-#  kibana:
-#    image: kibana:9.3.0
-#    container_name: todo-kibana
-#    environment:
-#      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-#      - ELASTICSEARCH_SSL_VERIFICATION_MODE=none
-#      - XPACK_SECURITY_ENABLED=false
-#
-#    networks:
-#      - app-network
-#    ports:
-#      - "5601:5601"
-#    depends_on:
-#      - elasticsearch
-#    restart: unless-stopped
-
 networks:
   app-network:  # Исправлено
     driver: bridge

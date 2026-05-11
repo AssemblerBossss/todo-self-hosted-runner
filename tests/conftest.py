@@ -1,3 +1,4 @@
+import os
 import asyncio
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -74,3 +75,14 @@ def event_loop_policy(request):
 async def ac() -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture(scope="session")
+def gitlab_test_config():
+    """Конфигурация для тестов с реальным GitLab API."""
+    return {
+        "project_url": os.getenv("TEST_GITLAB_PROJECT", "https://gitlab.com/gitlab-org/gitlab"),
+        "project_id": os.getenv("TEST_GITLAB_PROJECT_ID", "278964"),
+        "api_token": os.getenv("GITLAB_TOKEN", ""),
+        "max_issues": 2000,
+    }
