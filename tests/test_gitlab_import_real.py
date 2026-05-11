@@ -1,3 +1,4 @@
+# tests/test_gitlab_import_real.py
 import asyncio
 import os
 import time
@@ -11,20 +12,22 @@ pytestmark = [pytest.mark.integration]
 async def test_import_issues_sequential_real(user_client: AsyncClient, gitlab_test_config):
     """Тест последовательного импорта на реальном проекте."""
 
-    # Пропускаем, если интеграционные тесты отключены
     if os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true":
         pytest.skip("Integration tests disabled via SKIP_INTEGRATION_TESTS")
 
-    # Пропускаем, если нет сетевого доступа (локальная разработка без сети)
     if os.getenv("CI") != "true" and not os.getenv("ENABLE_REAL_GITLAB_TESTS"):
-        pytest.skip("Real GitLab tests disabled locally. Set ENABLE_REAL_GITLAB_TESTS=1 to enable.")
+        pytest.skip("Real GitLab tests disabled locally.")
+
+    # ✅ Правильный API endpoint
+    gitlab_api_url = f"{gitlab_test_config['api_base']}/projects/{gitlab_test_config['project_id']}/issues"
 
     resp = await user_client.post(
         "/todo/import-issues/",
         data={
-            "gitlab_url": f"{gitlab_test_config['project_url']}/-/issues",
+            "gitlab_url": gitlab_api_url,  # ← API, не веб-интерфейс!
             "token": gitlab_test_config["api_token"],
             "limit": gitlab_test_config["max_issues"],
+            "state": "opened",  # опционально: фильтр по статусу
         },
     )
 
@@ -40,15 +43,18 @@ async def test_parallel_faster_than_sequential_real(user_client: AsyncClient, gi
     """Сравнение производительности на реальных данных."""
 
     if os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true":
-        pytest.skip("Integration tests disabled via SKIP_INTEGRATION_TESTS")
+        pytest.skip("Integration tests disabled")
 
     if os.getenv("CI") != "true" and not os.getenv("ENABLE_REAL_GITLAB_TESTS"):
         pytest.skip("Real GitLab tests disabled locally.")
 
+    gitlab_api_url = f"{gitlab_test_config['api_base']}/projects/{gitlab_test_config['project_id']}/issues"
+
     common_params = {
-        "gitlab_url": f"{gitlab_test_config['project_url']}/-/issues",
+        "gitlab_url": gitlab_api_url,
         "token": gitlab_test_config["api_token"],
-        "limit": 100,  # меньше страниц для быстрого теста
+        "limit": 50,  # меньше для быстрого теста
+        "state": "opened",
     }
 
     # Последовательный импорт
@@ -56,8 +62,7 @@ async def test_parallel_faster_than_sequential_real(user_client: AsyncClient, gi
     resp_seq = await user_client.post("/todo/import-issues/", data=common_params)
     t_sequential = time.monotonic() - t0
 
-    # Пауза между запросами, чтобы избежать rate limit
-    await asyncio.sleep(2)
+    await asyncio.sleep(2)  # пауза против rate limit
 
     # Параллельный импорт
     t0 = time.monotonic()
@@ -68,5 +73,4 @@ async def test_parallel_faster_than_sequential_real(user_client: AsyncClient, gi
 
     assert resp_seq.status_code == 200
     assert resp_par.status_code == 200
-    # Параллельный должен быть быстрее с запасом на сетевые флуктуации
     assert t_parallel < t_sequential * 0.95

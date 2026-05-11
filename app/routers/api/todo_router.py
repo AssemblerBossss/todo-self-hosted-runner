@@ -30,6 +30,7 @@ from app.services.todo import TodoService
 from app.utils import (
     import_todos,
 )
+from app.utils.gitlab_url import gitlab_url_to_api
 
 todo_router = APIRouter(prefix="/todo", tags=["Todo"])
 
@@ -723,35 +724,55 @@ GITLAB_PER_PAGE = 100
 GITLAB_PARALLEL_WORKERS = 5
 
 
+# app/routers/api/todo_router.py (или в отдельном модуле)
+
 async def _fetch_gitlab_page(
-    client: httpx.AsyncClient,
-    base_url: str,
-    token: str,
-    page: int,
+        client: httpx.AsyncClient,
+        api_url: str,
+        token: str,
+        page: int,
+        per_page: int = 100,
+        state: str = "opened",
 ) -> list[dict]:
-    resp = await client.get(
-        base_url,
-        headers={"PRIVATE-TOKEN": token},
-        params={"per_page": GITLAB_PER_PAGE, "page": page, "state": "opened"},
-    )
+    """Загружает одну страницу задач из GitLab API."""
+
+    headers = {"PRIVATE-TOKEN": token} if token else {}
+
+    params = {
+        "page": page,
+        "per_page": per_page,
+        "state": state,
+        "order_by": "created_at",
+        "sort": "asc",
+    }
+
+    resp = await client.get(api_url, headers=headers, params=params, timeout=30.0)
     resp.raise_for_status()
     return resp.json()
 
 
 @todo_router.post("/import-issues/", status_code=status.HTTP_200_OK)
 async def import_issues(
-    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    todo_service: Annotated[TodoService, Depends(get_todo_service)],
-    user: Annotated[SUserInfo, Depends(get_current_active_user)],
-    gitlab_url: str = Form(...),
-    token: str = Form(...),
+        uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+        todo_service: Annotated[TodoService, Depends(get_todo_service)],
+        user: Annotated[SUserInfo, Depends(get_current_active_user)],
+        gitlab_url: str = Form(...),
+        token: str = Form(...),
 ):
     """Последовательно скачивает все issue из GitLab через пагинацию."""
+
+    # ✅ Конвертируем URL в API-формат
+    api_url = gitlab_url_to_api(gitlab_url)
+
     all_issues: list[dict] = []
     page = 1
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
-            batch = await _fetch_gitlab_page(client, gitlab_url, token, page)
+            # ✅ Передаём параметры запроса явно
+            batch = await _fetch_gitlab_page(
+                client, api_url, token, page,
+                per_page=GITLAB_PER_PAGE, state="opened"
+            )
             if not batch:
                 break
             all_issues.extend(batch)
@@ -767,17 +788,22 @@ async def import_issues(
 
 @todo_router.post("/import-issues-parallel/", status_code=status.HTTP_200_OK)
 async def import_issues_parallel(
-    uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
-    todo_service: Annotated[TodoService, Depends(get_todo_service)],
-    user: Annotated[SUserInfo, Depends(get_current_active_user)],
-    gitlab_url: str = Form(...),
-    token: str = Form(...),
+        uow_session: Annotated[UnitOfWork, Depends(get_async_uow_session)],
+        todo_service: Annotated[TodoService, Depends(get_todo_service)],
+        user: Annotated[SUserInfo, Depends(get_current_active_user)],
+        gitlab_url: str = Form(...),
+        token: str = Form(...),
 ):
     """Параллельно скачивает все issue из GitLab через asyncio + семафор."""
+
+    # ✅ Конвертируем URL в API-формат
+    api_url = gitlab_url_to_api(gitlab_url)
+
     async with httpx.AsyncClient(timeout=30) as client:
+        # Первый запрос для получения total_pages
         resp = await client.get(
-            gitlab_url,
-            headers={"PRIVATE-TOKEN": token},
+            api_url,
+            headers={"PRIVATE-TOKEN": token} if token else {},
             params={"per_page": GITLAB_PER_PAGE, "page": 1, "state": "opened"},
         )
         resp.raise_for_status()
@@ -788,11 +814,17 @@ async def import_issues_parallel(
 
         async def fetch_limited(page: int) -> list[dict]:
             async with semaphore:
-                return await _fetch_gitlab_page(client, gitlab_url, token, page)
+                return await _fetch_gitlab_page(
+                    client, api_url, token, page,
+                    per_page=GITLAB_PER_PAGE, state="opened"
+                )
 
-        remaining = await asyncio.gather(
-            *[fetch_limited(p) for p in range(2, total_pages + 1)]
-        )
+        if total_pages > 1:
+            remaining = await asyncio.gather(
+                *[fetch_limited(p) for p in range(2, total_pages + 1)]
+            )
+        else:
+            remaining = []
 
     all_issues = first_batch + [issue for batch in remaining for issue in batch]
     await todo_service.create_from_gitlab_issues(
@@ -801,7 +833,6 @@ async def import_issues_parallel(
         author_id=user.id,
     )
     return {"status": "success", "imported": len(all_issues)}
-
 
 @todo_router.post("/export/", response_class=FileResponse)
 async def export_data(

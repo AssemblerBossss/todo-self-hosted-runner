@@ -108,12 +108,17 @@ async def user_client(ac: AsyncClient) -> AsyncClient:
     return ac
 
 
+# tests/conftest.py
 @pytest.fixture(scope="session")
 def gitlab_test_config():
     """Конфигурация для тестов с реальным GitLab API."""
     return {
-        "project_url": os.getenv("TEST_GITLAB_PROJECT", "https://gitlab.com/gitlab-org/gitlab"),
+        # API endpoint, а не веб-интерфейс
+        "api_base": os.getenv("GITLAB_API_BASE", "https://gitlab.com/api/v4"),
+        # ID проекта gitlab-org/gitlab
         "project_id": os.getenv("TEST_GITLAB_PROJECT_ID", "278964"),
+        # Токен (опционально, для публичных проектов не нужен)
         "api_token": os.getenv("GITLAB_TOKEN", ""),
-        "max_issues": int(os.getenv("TEST_GITLAB_MAX_ISSUES", "500")),
+        # Лимит задач для ускорения тестов
+        "max_issues": int(os.getenv("TEST_GITLAB_MAX_ISSUES", "50")),
     }
