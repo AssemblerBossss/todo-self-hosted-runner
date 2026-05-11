@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.database import get_async_uow_session
+from app.exceptions import UserAlreadyExists
 from app.models.base import Base
 from app.main import app
 from app.core.uow import UnitOfWork
@@ -80,21 +81,28 @@ async def ac() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture(scope="module")
 async def user_client(ac: AsyncClient) -> AsyncClient:
-    """Фикстура для авторизованного клиента — доступна всем тестам."""
-    await ac.post(
-        "/auth/register",
-        json={
-            "email": "gitlab_user@example.com",
-            "password": "password123",
-            "confirm_password": "password123",
-            "first_name": "Git",
-            "last_name": "Lab",
-        },
-        follow_redirects=False,
-    )
+    email = "gitlab_user@example.com"
+    password = "password123"
+
+    try:
+        await ac.post(
+            "/auth/register",
+            json={
+                "email": email,
+                "password": password,
+                "confirm_password": password,
+                "first_name": "Git",
+                "last_name": "Lab",
+            },
+            follow_redirects=False,
+        )
+    except UserAlreadyExists:
+        pass  # Пользователь уже есть, продолжаем
+
+    # Всегда логинимся для получения токена
     await ac.post(
         "/auth/token",
-        json={"email": "gitlab_user@example.com", "password": "password123"},
+        json={"email": email, "password": password},
         follow_redirects=False,
     )
     return ac
